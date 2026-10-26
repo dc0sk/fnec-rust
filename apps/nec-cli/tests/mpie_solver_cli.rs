@@ -496,6 +496,10 @@ EN
 /// binary. Refining here as well would move the pattern (~1e-3: the far field
 /// weights each segment as a point source) where the parity sweep's twin runs
 /// could not see it.
+///
+/// The reactance's last digit moved once since, on purpose: FND-297 b gave the
+/// MPIE the ε0 consistent with its μ0 (1/(μ0 c²) for CODATA 2018's 8.8541878128e-12,
+/// 5·10⁻¹⁰ relative), and 45.954885 became 45.954886.
 #[test]
 fn the_mpie_is_not_moved_by_the_free_end_refinement() {
     let out = run_fnec(&[
@@ -514,7 +518,7 @@ fn the_mpie_is_not_moved_by_the_free_end_refinement() {
     assert!(
         stdout
             .lines()
-            .any(|l| l.starts_with("1 26 ") && l.ends_with(" 79.147332 45.954885")),
+            .any(|l| l.starts_with("1 26 ") && l.ends_with(" 79.147332 45.954886")),
         "MPIE feedpoint moved:\n{stdout}"
     );
     assert!(

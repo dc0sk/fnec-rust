@@ -253,3 +253,113 @@ fn the_currents_block_lists_the_decks_segments() {
         .collect();
     assert_eq!(segs, (1..=21).collect::<Vec<_>>(), "{}", block.join("\n"));
 }
+
+/// The FND-294 caveat's own words, unique to it.
+const FREE_END_CAVEAT: &str = "at a free wire end; a feed there is singular";
+
+/// The audit's end-fed wire (`ef5_*`): 5 m of 1 mm wire at 29.9 MHz, `n` segments,
+/// `drive` on it.
+fn ef5(n: usize, drive: &str) -> String {
+    format!("CE\nGW 1 {n} 0 0 0 0 0 5 0.001\nGE 0\n{drive}\nFR 0 1 0 0 29.9 0\nEN\n")
+}
+
+/// FND-294: a feed on a free-end segment is answered (exit 0), with a caveat that
+/// the answer is the mesh's, not the antenna's. Fed on segment 1 the impedance
+/// does not converge in either code — fnec Hallén 1839.26 − j1838.77 /
+/// 1244.24 − j5690.26 / 746.32 − j11638.39 at 11 / 33 / 99 segments, nec2c 1.3.1
+/// 3078.4 − j1554.2 / 2793.4 − j8345.2 / 1700.8 − j17519 — while a feed at a
+/// fixed interior point 0.68 m in (segment 2 / 5 / 14) converges in both: fnec
+/// 490.85 + j66.84 / 501.49 + j76.16 / 507.01 + j79.61, nec2c 493.96 + j107.45 /
+/// 503.41 + j93.65 / 508.14 + j87.75. The test asserts the caveat, not the numbers.
+#[test]
+fn a_feed_at_a_free_wire_end_is_caveated() {
+    let cases: [(&str, String, (u32, u32)); 3] = [
+        ("first segment", ef5(11, "EX 0 1 1 0 1 0"), (1, 1)),
+        ("last segment", ef5(11, "EX 0 1 11 0 1 0"), (1, 11)),
+        ("current source", ef5(11, "EX 4 1 1 0 1 0"), (1, 1)),
+    ];
+    for (what, deck, (tag, seg)) in cases {
+        let (ok, stdout, stderr) = run(&[], &deck);
+        assert!(ok, "{what}: a caveat, not a refusal (D10):\n{stderr}");
+        z_at(&stdout, tag, seg);
+        let want = format!("feedpoint tag {tag} segment {seg} is on a segment {FREE_END_CAVEAT}");
+        assert!(stderr.contains(&want), "{what}: no caveat:\n{stderr}");
+        assert_eq!(
+            stderr.matches(FREE_END_CAVEAT).count(),
+            1,
+            "{what}: {stderr}"
+        );
+    }
+}
+
+/// Negative controls for the caveat, one per way a feed can sit near an end that
+/// is not free. Each must also solve and report its feedpoint, so the absence is
+/// not that of a run that never got there.
+#[test]
+fn a_feed_in_from_a_free_end_is_not_caveated() {
+    // A base-fed monopole: the end on the ground joins its image. Finite ground
+    // joins it too (`ground_joins_wire_ends`, unit-tested in `geometry.rs`), but a
+    // wire touching GN 0/2 is refused before any caveat (FND-240).
+    let monopole = |gn: &str| {
+        format!(
+            "CE\nGW 1 26 0 0 0 0 0 2.5 0.001\nGE 1\n{gn}\nEX 0 1 1 0 1 0\nFR 0 1 0 0 29.98 0\nEN\n"
+        )
+    };
+    let invv = "CE\nGW 1 11 -2 0 8 0 0 10 0.001\nGW 2 11 0 0 10 2 0 8 0.001\nGE 1\nGN 1\n\
+                EX 0 1 11 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n";
+    let tee = "CE\nGW 1 11 0 0 0 0 0 3 0.001\nGW 2 11 0 0 3 -2 0 3 0.001\n\
+               GW 3 11 0 0 3 2 0 3 0.001\nGE 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n";
+    // Feeds only (D10): a TL port on a free-end segment is not judged.
+    let tl_port = "CE\nGW 1 21 0 0 -2.5 0 0 2.5 0.001\nGW 2 21 1 0 -2.5 1 0 2.5 0.001\nGE 0\n\
+                   EX 0 1 11 0 1 0\nTL 1 1 2 21 50 0 0 0 0 0\nFR 0 1 0 0 29.98 0\nEN\n";
+    let cases: Vec<(&str, String, (u32, u32))> = vec![
+        ("interior feed 0.68 m in", ef5(11, "EX 0 1 2 0 1 0"), (1, 2)),
+        ("centre-fed dipole", wire(21, "EX 0 1 11 0 1 0"), (1, 11)),
+        ("monopole over GN 1", monopole("GN 1"), (1, 1)),
+        ("inverted-V apex (bend)", invv.to_string(), (1, 11)),
+        ("tee stem top (junction)", tee.to_string(), (1, 11)),
+        ("TL port at a free end", tl_port.to_string(), (1, 11)),
+    ];
+    for (what, deck, (tag, seg)) in cases {
+        let (ok, stdout, stderr) = run(&[], &deck);
+        assert!(ok, "{what}: must solve:\n{stderr}");
+        z_at(&stdout, tag, seg);
+        assert!(
+            !stderr.contains(FREE_END_CAVEAT),
+            "{what}: caveated:\n{stderr}"
+        );
+    }
+}
+
+/// The MPIE refuses a free-end feed (FND-228) by the same predicate; it does not
+/// answer with the Hallén caveat instead.
+#[test]
+fn the_mpie_refuses_the_caveated_feed_rather_than_caveating_it() {
+    let (ok, stdout, stderr) = run(&["--solver", "mpie"], &ef5(11, "EX 0 1 1 0 1 0"));
+    assert!(!ok, "{stdout}");
+    assert!(
+        stderr.contains("which the MPIE's basis cannot drive"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains(FREE_END_CAVEAT), "{stderr}");
+    // And takes the interior feed the caveat passes.
+    let (ok, stdout, stderr) = run(&["--solver", "mpie"], &ef5(11, "EX 0 1 2 0 1 0"));
+    assert!(ok, "{stderr}");
+    z_at(&stdout, 1, 2);
+}
+
+/// `fnec converge` prints each mesh's caveats with the mesh's prefix; a free-end
+/// feed is a free-end feed on every mesh.
+#[test]
+fn converge_caveats_a_free_end_feed_on_every_mesh() {
+    let (ok, _stdout, stderr) = run(&["converge"], &ef5(11, "EX 0 1 1 0 1 0"));
+    assert!(ok, "{stderr}");
+    for mesh in ["mesh 3x: ", "mesh 9x: "] {
+        assert!(
+            stderr
+                .lines()
+                .any(|l| l.starts_with(mesh) && l.contains(FREE_END_CAVEAT)),
+            "no {mesh:?} caveat:\n{stderr}"
+        );
+    }
+}

@@ -266,7 +266,7 @@ pub(crate) fn solve_graph_unit_gap(
     loads: &[Complex64],
 ) -> Result<Vec<Complex64>, crate::linear::SolveError> {
     let ground = crate::ground_model_from_deck(deck);
-    let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
+    let k = 2.0 * std::f64::consts::PI * freq_hz / crate::constants::C0;
     let sources = corner_sources(segs, &ground, freq_hz);
     // `z_mat` must be UNSTAMPED: the loads enter here, as columns of the graph
     // system, and nowhere else (FND-198).
@@ -621,16 +621,27 @@ pub const JOINED_GAPS_CAVEAT_RAD: f64 = 0.1;
 /// `None` when no node takes that row or every such node is straight to the
 /// radian tolerance of [`JOINED_GAPS_CAVEAT_RAD`]. The one predicate the FND-278
 /// caveat keys on, built from the same gap list the solve builds (feeds, the
-/// current source, network ports, the deck's lumped loads at `freq_hz`) and the
-/// same nodes (the section graph's degree-2 nodes where the graph solves the
-/// deck, the conductor paths' bends otherwise). A deck on PEC ground is judged on
-/// its image problem, as the solve is (FND-082).
-pub fn joined_gaps_at_a_bend_deg(deck: &NecDeck, segs: &[Segment], freq_hz: f64) -> Option<f64> {
+/// current source, network ports, and `loads`) and the same nodes (the section
+/// graph's degree-2 nodes where the graph solves the deck, the conductor paths'
+/// bends otherwise). A deck on PEC ground is judged on its image problem, as the
+/// solve is (FND-082), with the image's loads as the solve doubles them
+/// ([`image_loads`]).
+///
+/// `loads` is the per-segment series-load diagonal on `segs` that the solve is
+/// handed — [`crate::loads::run_load_diagonal`], `--loads-config` loads included.
+/// Rebuilt here from the deck's `LD` cards it missed those, and a Laplace load
+/// beside a bend solved with the joined row and no caveat (FND-288).
+pub fn joined_gaps_at_a_bend_deg(
+    deck: &NecDeck,
+    segs: &[Segment],
+    freq_hz: f64,
+    loads: &[Complex64],
+) -> Option<f64> {
+    debug_assert_eq!(loads.len(), segs.len(), "one load per segment");
     let ground = crate::ground_model_from_deck(deck);
     if let Ok(Some(img)) = crate::ground_contact::pec_ground_contact(deck, segs, &ground) {
-        return joined_gaps_at_a_bend_deg(&img.deck, &img.segs, freq_hz);
+        return joined_gaps_at_a_bend_deg(&img.deck, &img.segs, freq_hz, &image_loads(loads));
     }
-    let loads = crate::loads::build_loads(deck, segs, freq_hz).0;
     let ports = crate::network::build_networks(deck, segs, freq_hz)
         .map(|(nets, _)| nets.ports())
         .unwrap_or_default();
@@ -638,7 +649,7 @@ pub fn joined_gaps_at_a_bend_deg(deck: &NecDeck, segs: &[Segment], freq_hz: f64)
         .filter_map(|(ex, _)| crate::find_deck_segment(segs, ex.tag, ex.segment))
         .chain(ports)
         .collect();
-    let gaps = NodeGaps::new(segs, feeds, &loads);
+    let gaps = NodeGaps::new(segs, feeds, loads);
     let angle = |ta: [f64; 3], tb: [f64; 3]| {
         (ta[0] * tb[0] + ta[1] * tb[1] + ta[2] * tb[2])
             .clamp(-1.0, 1.0)
@@ -717,7 +728,7 @@ pub(crate) fn group_sections(
     ground: &crate::GroundModel,
     gaps: &NodeGaps,
 ) -> PathGrouping {
-    let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
+    let k = 2.0 * std::f64::consts::PI * freq_hz / crate::constants::C0;
     let sources = corner_sources(segs, ground, freq_hz);
     match section_layout(segs, paths, k, &sources, gaps) {
         Some((group_of, bends)) => (group_of, path_end_rows(segs, paths), bends),
@@ -1391,7 +1402,7 @@ fn solve_planewave_on_plan(
         // stamps, and a system built from it applied them in the wrong form,
         // silently — 25 % off nec2c on a loaded T (FND-197).
         let built = system.get_or_init(|| {
-            let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
+            let k = 2.0 * std::f64::consts::PI * freq_hz / crate::constants::C0;
             let z = crate::assemble_z_matrix_with_ground(segs, freq_hz, matrix_ground);
             let mut system = crate::section_graph::GraphSystem::build(
                 &z,
@@ -1644,6 +1655,17 @@ fn image_problem(
         .map_err(HallenSessionError::Excitation)
 }
 
+/// The image problem's load diagonal from the deck's: the image of a series load
+/// is the same load, and the images follow the originals (`pec_ground_contact`).
+/// One function for the solve and the FND-278 caveat, so the caveat judges the
+/// image with the loads the solve stamps — `--loads-config` loads included, which
+/// the image deck's cards cannot carry (FND-288).
+pub(crate) fn image_loads(loads: &[Complex64]) -> Vec<Complex64> {
+    let mut image = loads.to_vec();
+    image.extend_from_slice(loads);
+    image
+}
+
 /// A PEC-ground deck with ground contact, solved as its doubled free-space image
 /// problem (FND-082). The caller's PEC-kernel matrix is not used: the image is in
 /// the geometry now, so the matrix is the free-space one of the doubled segments.
@@ -1694,9 +1716,7 @@ fn solve_ground_contact(
         // Returned through the receive seam above.
         HallenDrive::PlaneWave => {}
     }
-    // The image of a series load is the same load.
-    let mut image_loads = loads.to_vec();
-    image_loads.extend_from_slice(loads);
+    let image_loads = image_loads(loads);
     let mut z = crate::assemble_z_matrix_with_ground(
         &img.segs,
         freq_hz,
@@ -1757,7 +1777,7 @@ fn solve_hallen_routed_inner(
     // them into `z_mat` (FND-162 stage 5). `loads` is the per-segment diagonal:
     // all zeros, not empty, on an unloaded deck.
     if let Some(graph) = graph_route(deck, segs) {
-        let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
+        let k = 2.0 * std::f64::consts::PI * freq_hz / crate::constants::C0;
         let sources = corner_sources(segs, &ground, freq_hz);
         // TL/NT networks by superposition (FND-123): the response to a unit gap
         // at each undriven port, from the same system — exact, because the

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
 pub mod basis;
+pub mod constants;
 pub mod convergence;
 mod corner;
 pub mod current_source;
@@ -78,7 +79,7 @@ pub use linear::{
 };
 pub use loads::{
     add_laplace_loads, build_loads, laplace_impedance, laplace_load_error, ld_card_problem,
-    LaplaceLoad, LoadWarning,
+    run_load_diagonal, LaplaceLoad, LoadWarning,
 };
 pub use matrix::{
     assemble_pocklington_matrix, assemble_z_matrix, assemble_z_matrix_with_ground, ZMatrix,

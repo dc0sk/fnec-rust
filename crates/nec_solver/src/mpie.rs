@@ -52,9 +52,7 @@ use crate::linear::{solve_square_in_place, SolveError};
 use crate::sommerfeld::{ground_image_factor, ReflectedRemainder};
 use num_complex::Complex64;
 
-const C0: f64 = 299_792_458.0;
-const MU0: f64 = 4.0e-7 * std::f64::consts::PI;
-const EPS0: f64 = 8.854_187_812_8e-12;
+use crate::constants::{C0, EPS0, MU0};
 
 /// 6-point Gauss–Legendre nodes/weights on [-1, 1] (matches the Python oracle).
 /// Observer-side panels for a near pair (see `assemble`).

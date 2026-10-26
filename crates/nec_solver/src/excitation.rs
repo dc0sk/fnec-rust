@@ -15,9 +15,7 @@ use nec_model::deck::NecDeck;
 
 use crate::geometry::{merge_collinear_wire_endpoints, ConductorPath, Segment};
 
-const C0: f64 = 299_792_458.0; // m/s
-const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
-const ETA0: f64 = MU0 * C0; // free-space wave impedance
+use crate::constants::{C0, ETA0};
 
 /// Every `EX` card that names a feedpoint, in deck order, with what kind it is.
 ///

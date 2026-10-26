@@ -217,9 +217,10 @@ fn solve_at_freq(
             seg as usize,
             deck,
             &segs,
-            py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+            py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_run(
                 deck,
                 &segs,
+                &[],
                 &[freq_hz],
             )),
         ) {
@@ -244,7 +245,14 @@ fn solve_at_freq(
             ));
         };
         let current: Complex64 = i_vec[idx];
-        let v_source: Complex64 = v_vec[idx] * seg.length;
+        // Through the shared seam the CLI and the worker price through (FND-297 d).
+        let v_source: Complex64 = nec_solver::feedpoint_drive_voltage(
+            nec_model::card::FeedpointRole::DeltaGap,
+            seg.length,
+            v_vec[idx],
+            None,
+        )
+        .ok_or("internal: a delta gap without a drive")?;
         let z_in: Complex64 = nec_solver::feedpoint_impedance(
             v_source,
             current,
@@ -263,9 +271,10 @@ fn solve_at_freq(
             seg.tag_index as usize,
             deck,
             &segs,
-            py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+            py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_run(
                 deck,
                 &segs,
+                &[],
                 &[freq_hz],
             )),
         ) {
@@ -432,9 +441,10 @@ fn sweep_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult<PyObject
         &z_res,
         &result.deck,
         &segs,
-        py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+        py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_run(
             &result.deck,
             &segs,
+            &[],
             &nec_solver::frequencies_hz(&result.deck),
         )),
     ) {

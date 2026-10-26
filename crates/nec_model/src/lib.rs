@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
 pub mod card;
+pub mod constants;
 pub mod deck;
 
 /// **Extension point EP-1 — deck post-processor.**
