@@ -148,6 +148,14 @@ fn solve_structure(
         let loads = nec_solver::build_deck_stamps(deck, &segs, freq_hz).diagonal;
         let routed = nec_solver::solve_hallen_routed(deck, &segs, &mut z_mat, freq_hz, &loads)
             .map_err(|e| e.to_string())?;
+        // The one residual predicate the CLI and the worker render (FND-302).
+        let threshold = nec_solver::validate::residual_caveat_threshold()?;
+        if let Some(w) = routed
+            .residual
+            .and_then(|(_, rel)| nec_solver::validate::residual_caveat_at(rel, threshold))
+        {
+            warnings.push(w);
+        }
         // The source currents: a feed that is also a TL/NT port delivers the
         // network branch too, and the impedance is priced from that (FND-123).
         let source = routed.source_currents();

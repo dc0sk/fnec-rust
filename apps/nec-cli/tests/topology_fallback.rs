@@ -5,7 +5,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 mod common;
 
-use common::{assert_diag_field, assert_diag_field_is_finite_nonnegative, assert_diag_mode};
+use common::{
+    assert_diag_field, assert_diag_field_is_finite_nonnegative, assert_diag_field_not_computed,
+    assert_diag_mode,
+};
 
 fn assert_non_single_chain_fallback(solver: &str, expected_diag_mode: &str) {
     let now = SystemTime::now()
@@ -337,7 +340,8 @@ fn residual_diag_fields_are_finite_and_nonnegative() {
     assert_diag_field_is_finite_nonnegative(&hallen_stderr, "abs_res");
     assert_diag_field_is_finite_nonnegative(&hallen_stderr, "rel_res");
     assert_diag_field_is_finite_nonnegative(&hallen_stderr, "diag_spread");
-    assert_diag_field_is_finite_nonnegative(&hallen_stderr, "sin_rel_res");
+    // The sinusoidal basis did not run (D8: n/a, not 0).
+    assert_diag_field_not_computed(&hallen_stderr, "sin_rel_res");
 
     let pulse = run_solver_on_reference_dipole("pulse");
     assert!(
@@ -349,7 +353,7 @@ fn residual_diag_fields_are_finite_and_nonnegative() {
     assert_diag_field_is_finite_nonnegative(&pulse_stderr, "abs_res");
     assert_diag_field_is_finite_nonnegative(&pulse_stderr, "rel_res");
     assert_diag_field_is_finite_nonnegative(&pulse_stderr, "diag_spread");
-    assert_diag_field_is_finite_nonnegative(&pulse_stderr, "sin_rel_res");
+    assert_diag_field_not_computed(&pulse_stderr, "sin_rel_res");
 
     let sinusoidal = run_solver_on_reference_dipole("sinusoidal");
     assert!(

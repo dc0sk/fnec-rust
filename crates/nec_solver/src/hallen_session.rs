@@ -1480,6 +1480,60 @@ pub struct ResidualInputs {
     pub rhs: Vec<Complex64>,
     /// `Ok` groups rows by contiguous wire range, `Err` by conductor path.
     pub grouping: Result<Vec<(usize, usize)>, Vec<usize>>,
+    /// The corner term the conductor-path solve adds to the tangential rows, as
+    /// additive matrix entries `(row, col, value)` ([`crate::linear::BendLayout`]).
+    /// Empty on every route without bends.
+    ///
+    /// Without it the residual described a system the route does not solve: on a
+    /// bent path `Z·I − h − rhs` is the corner correction itself, so the 3× U read
+    /// `rel_res = 0.68` and the corpus split-V 0.96 (FND-302).
+    pub corner: Vec<(usize, usize, Complex64)>,
+}
+
+impl ResidualInputs {
+    /// Inputs for a route with no corner term: the merged-conductor grouping (the
+    /// GPU-resident solve and the sinusoidal basis use this).
+    pub fn plain(
+        homogeneous: Vec<Complex64>,
+        rhs: Vec<Complex64>,
+        endpoints: Vec<(usize, usize)>,
+    ) -> Self {
+        Self {
+            homogeneous,
+            rhs,
+            grouping: Ok(endpoints),
+            corner: Vec::new(),
+        }
+    }
+
+    /// `(‖r‖, ‖r‖ / ‖rhs‖)` for `r = (Z + corner)·I − h − rhs` over the N Hallén
+    /// rows: the residual of the system the route actually solved. `z` must be the
+    /// matrix that was solved (loads stamped). One function for every caller, so the
+    /// residual and the solve cannot describe different systems again (FND-302).
+    pub fn residual(&self, z: &ZMatrix, currents: &[Complex64]) -> (f64, f64) {
+        let n = z.n;
+        let mut r = vec![Complex64::new(0.0, 0.0); n];
+        for (row, r_row) in r.iter_mut().enumerate() {
+            let mut zi = Complex64::new(0.0, 0.0);
+            for (col, i_col) in currents.iter().enumerate().take(n) {
+                zi += z.get(row, col) * *i_col;
+            }
+            *r_row = zi - self.homogeneous[row] - self.rhs[row];
+        }
+        for &(row, col, v) in &self.corner {
+            r[row] += v * currents[col];
+        }
+        let norm = |v: &[Complex64]| {
+            v.iter()
+                .map(num_complex::Complex::norm_sqr)
+                .sum::<f64>()
+                .sqrt()
+        };
+        let res = norm(&r);
+        let denom = norm(&self.rhs);
+        let rel = if denom > 0.0 { res / denom } else { res };
+        (res, rel)
+    }
 }
 
 /// The result of a routed Hallén solve.
@@ -1491,6 +1545,12 @@ pub struct HallenRouted {
     pub port_voltage: Option<Complex64>,
     pub route: HallenRoute,
     pub residual_inputs: Option<ResidualInputs>,
+    /// `(abs, rel)` residual of the solved system ([`ResidualInputs::residual`]),
+    /// computed once at [`solve_hallen_routed`]'s exit so every frontend can render
+    /// [`crate::validate::residual_caveat`]. `None` where the route computes no
+    /// residual (section graph, PEC-contact image, plane wave, current source) —
+    /// "not computed", never 0 (FND-306). Costs one O(N²) product per solve.
+    pub residual: Option<(f64, f64)>,
     /// `(segment, current)` into a `TL`/`NT` network at each driven segment that
     /// is also a network port. Empty without networks.
     ///
@@ -1567,7 +1627,7 @@ pub fn solve_hallen_routed(
     freq_hz: f64,
     loads: &[Complex64],
 ) -> Result<HallenRouted, HallenSessionError> {
-    let routed = match image_problem(deck, segs)? {
+    let mut routed = match image_problem(deck, segs)? {
         Some(img) => solve_ground_contact(deck, segs, &img, z_mat, freq_hz, loads)?,
         None => solve_hallen_routed_inner(deck, segs, z_mat, freq_hz, loads)?,
     };
@@ -1575,6 +1635,14 @@ pub fn solve_hallen_routed(
     // check per arm is three chances to add a fourth arm without one (FND-126).
     crate::check_currents_finite(&routed.currents)
         .map_err(HallenSessionError::NonFiniteCurrents)?;
+    // The residual at the same single exit, against `z_mat` as solved (the paths
+    // basis stamps its load columns into it in place), so the CLI, GUI, worker
+    // and bindings all see the one figure `validate::residual_caveat` judges
+    // (FND-302).
+    routed.residual = routed
+        .residual_inputs
+        .as_ref()
+        .map(|ri| ri.residual(z_mat, &routed.currents));
     Ok(routed)
 }
 
@@ -1623,6 +1691,7 @@ fn solve_ground_contact(
             port_voltage: None,
             route,
             residual_inputs: None,
+            residual: None,
             network_branch: Vec::new(),
         });
     }
@@ -1741,6 +1810,7 @@ fn solve_hallen_routed_inner(
                 port_voltage: None,
                 route,
                 residual_inputs: None,
+                residual: None,
                 network_branch: Vec::new(),
             });
         }
@@ -1768,6 +1838,7 @@ fn solve_hallen_routed_inner(
             port_voltage: None,
             route,
             residual_inputs: None,
+            residual: None,
             network_branch: net.driven_branch,
         });
     }
@@ -1817,6 +1888,7 @@ fn solve_hallen_routed_inner(
             port_voltage: Some(port_voltage),
             route,
             residual_inputs: None,
+            residual: None,
             network_branch: Vec::new(),
         });
     }
@@ -1861,6 +1933,7 @@ fn solve_hallen_routed_inner(
                 port_voltage: None,
                 route,
                 residual_inputs: None,
+                residual: None,
                 network_branch: Vec::new(),
             })
         }
@@ -1941,6 +2014,12 @@ fn solve_delta_gap(
         homogeneous: homogeneous_of(&rhs, &sol.c_hom_per_wire),
         rhs: rhs.rhs.clone(),
         grouping,
+        // The solve added these to its matrix (`solve_hallen_paths`); the residual
+        // must too, or it measures the corner term instead of the solve (FND-302).
+        corner: grouped
+            .as_ref()
+            .map(|(_, _, bends)| bends.corner.clone())
+            .unwrap_or_default(),
     };
     if networks.is_empty() {
         return Ok(HallenRouted {
@@ -1948,6 +2027,7 @@ fn solve_delta_gap(
             port_voltage: None,
             route,
             residual_inputs: Some(residual),
+            residual: None,
             network_branch: Vec::new(),
         });
     }
@@ -1992,6 +2072,7 @@ fn solve_delta_gap(
         port_voltage: None,
         route,
         residual_inputs: Some(residual),
+        residual: None,
         network_branch: net.driven_branch,
     })
 }
@@ -2062,6 +2143,7 @@ fn solve_current_source(
             port_voltage: Some(fp.port_voltage),
             route,
             residual_inputs: None,
+            residual: None,
             network_branch: Vec::new(),
         });
     };
@@ -2092,6 +2174,7 @@ fn solve_current_source(
         port_voltage: Some(port_voltage),
         route,
         residual_inputs: None,
+        residual: None,
         network_branch: Vec::new(),
     })
 }

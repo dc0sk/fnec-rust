@@ -56,8 +56,47 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   the automation guide shows the `LD 0` + `NT` recipe, which the contract
   test round-trips on the corpus monopole (50.000000 − j0.000016 Ω).
 
+- **`--hallen-residual-caveat <value>` and `FNEC_HALLEN_REL_RESIDUAL_CAVEAT`**
+  set the FND-302 caveat's threshold (default 1e-5), on the pattern of
+  `--sin-fallback-rel-max`: the flag over the variable, an invalid value
+  refused with exit 2. The variable reaches every frontend — `fnec converge`,
+  `sweep --resonance`, `fnec worker`, the GUI and `fnec_py` — so the caveat can
+  be shown to fire through each of them; no corpus deck reaches the default.
+
+### Changed
+
+- **A residual the route did not compute reads `n/a`, not `0`** (FND-306, D8).
+  The section graph, a PEC-contact image, a plane wave, a current source and
+  `--solver mpie` compute no residual and printed `abs_res=0.000000e0
+  rel_res=0.000000e0`, which reads as a perfect solve. The `diag:` line and
+  `--bench-format csv` now print `n/a` there and `--bench-format json` `null`;
+  the same for `sin_rel_res` when the sinusoidal basis did not run (it was
+  documented as "0 for non-sinusoidal paths") and for every residual field and
+  `diag_spread` of a `--hosts` bench record, which the worker does not send.
+  `scripts/pi-benchmark-compare.sh` and `-summary.sh` average only numeric
+  samples, so `n/a` no longer averages in as a 0.
+
 ### Fixed
 
+- **The Hallén `rel_res` describes the system the route solved** (FND-302). On
+  a bent conductor path the solve adds a corner term to its tangential rows; the
+  residual left it out, so it measured the corner correction instead of the
+  solve. The corpus U refined 3× read `rel_res = 0.678` and the corpus split-V
+  0.96 — valid decks whose solves are exact: with the corner in the residual
+  they read 4.7e-11 and 1.1e-10, and the 3× U's impedance is 1.3 % (R) / 0.65 %
+  (X) from nec2c's at the same mesh. The residual is now one method,
+  `ResidualInputs::residual`, computed at `solve_hallen_routed`'s exit
+  (`HallenRouted::residual`), and above 1e-5 an f64 Hallén solve earns a
+  warning naming FND-302 on the CLI, the worker, the GUI (single solve and
+  sweep, once per run) and `fnec_py` — a caveat, not a refusal: no corpus deck
+  reaches it (72 f64 solves of the corpus at 1×, 3× and six decks at 9×: at most
+  3.55e-8 up to 3×, 6.82e-8 at 9×). Not judged by it: a GPU-resident f32 solve
+  (the device gates its own at 1e-4; the corpus yagi at 3× reads 1.4e-5 there
+  and 3.2e-8 on the CPU) and the sinusoidal basis, whose projection residual
+  (~6.6e-4) `--sin-fallback-rel-max` judges. Which residual is judged is one typed
+  predicate, `validate::ResidualKind::judged_by_hallen_caveat` (`HallenF64` only),
+  set where each residual is computed; the worker's device arm asserts it at
+  compile time.
 - **`--exec gpu` fills the matrix in f32 only for a point the device solves, and
   the `diag:` record says where the fill ran** (FND-293). The device filled the
   Z-matrix of every free-space `--exec gpu` deck of 128 segments or more; when the

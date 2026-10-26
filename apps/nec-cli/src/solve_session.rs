@@ -108,10 +108,27 @@ pub(super) struct BenchRecord {
     pub(super) pulse_rhs: String,
     pub(super) exec: String,
     pub(super) freq_mhz: f64,
-    pub(super) abs_res: f64,
-    pub(super) rel_res: f64,
-    pub(super) diag_spread: f64,
-    pub(super) sin_rel_res: f64,
+    /// `None` where the route computes no residual: printed `n/a` on the diag
+    /// line and the bench CSV, `null` in bench JSON — never a perfect-looking 0
+    /// (FND-306, D8).
+    pub(super) abs_res: Option<f64>,
+    pub(super) rel_res: Option<f64>,
+    /// `None` only for a `--hosts` record: the worker does not send it.
+    pub(super) diag_spread: Option<f64>,
+    /// The sinusoidal basis's own (pre-fallback) residual; `None` when that basis
+    /// did not run (D8: the old 0 read as a perfect sinusoidal solve).
+    pub(super) sin_rel_res: Option<f64>,
+}
+
+/// A residual for the diag line and the bench CSV: `{:.6e}`, or `n/a` when the
+/// route computed none (FND-306).
+pub(super) fn residual_field(v: Option<f64>) -> String {
+    v.map_or_else(|| "n/a".to_string(), |x| format!("{x:.6e}"))
+}
+
+/// The same for bench JSON: a number, or `null`.
+pub(super) fn residual_json(v: Option<f64>) -> String {
+    v.map_or_else(|| "null".to_string(), |x| format!("{x:.6e}"))
 }
 use nec_report::{
     render_text_report, CurrentRow, FeedpointRow, LoadRow, PatternRow, PointReport, SourceRow,
@@ -237,6 +254,13 @@ pub(super) struct FrequencySolveResult {
     /// What this point's resolved loads were, for the sweep's aggregate caveat
     /// (FND-209): the deck alone cannot say.
     pub(super) run_loads: nec_solver::validate::RunLoads,
+    /// The relative residual of this point's f64 Hallén solve, for
+    /// `validate::residual_caveat_at` (FND-302); `None` for routes that compute
+    /// none and for every residual whose `ResidualKind` is not judged: a device
+    /// (f32) solve (judged by the device at 1e-4), the sinusoidal projection
+    /// (judged by `--sin-fallback-rel-max`) and the pulse and continuity bases
+    /// (printed, not judged).
+    pub(super) hallen_rel_res: Option<f64>,
 }
 
 /// The `exec` a point actually ran: `gpu` only when the device solved it.
@@ -306,31 +330,6 @@ pub(super) fn residual_zi_minus_v(
 
     let res = l2_norm(&r);
     let denom = l2_norm(v_vec);
-    let rel = if denom > 0.0 { res / denom } else { res };
-    (res, rel)
-}
-
-pub(super) fn residual_hallen(
-    z: &ZMatrix,
-    i_vec: &[Complex64],
-    homogeneous: &[Complex64],
-    rhs: &[Complex64],
-) -> (f64, f64) {
-    // `homogeneous` is the solved `cos·C + sin·D` per row, from
-    // `nec_solver::hallen_homogeneous(_paths)` — the evaluator that shares the
-    // solvers' column map, so this cannot drift from them (FND-158). It replaced
-    // a per-route pair of functions that each re-derived the cos term alone.
-    let n = z.n;
-    let mut r = vec![Complex64::new(0.0, 0.0); n];
-    for row in 0..n {
-        let mut zi = Complex64::new(0.0, 0.0);
-        for (col, i_col) in i_vec.iter().enumerate().take(n) {
-            zi += z.get(row, col) * *i_col;
-        }
-        r[row] = zi - homogeneous[row] - rhs[row];
-    }
-    let res = l2_norm(&r);
-    let denom = l2_norm(rhs);
     let rel = if denom > 0.0 { res / denom } else { res };
     (res, rel)
 }
@@ -1161,6 +1160,10 @@ pub(crate) fn probe_feedpoints(
         }
     }
 
+    // `FNEC_HALLEN_REL_RESIDUAL_CAVEAT` or the default; refused here, before any
+    // solve, as the main command refuses it.
+    let threshold = nec_solver::validate::residual_caveat_threshold()?;
+    let mut worst_rel: Option<f64> = None;
     let mut points = Vec::with_capacity(freqs.len());
     for freq_hz in freqs {
         let solved = solve_frequency_point(
@@ -1185,6 +1188,7 @@ pub(crate) fn probe_feedpoints(
         for w in &solved.negative_r {
             eprintln!("{}warning: {w}", cfg.stderr_prefix);
         }
+        worst_rel = nec_solver::validate::worst_residual(worst_rel, solved.hallen_rel_res);
         let feedpoints = match solved.report {
             PointOutput::Tables(point) => point.rows.clone(),
             PointOutput::Text(_) => {
@@ -1196,6 +1200,12 @@ pub(crate) fn probe_feedpoints(
             feedpoints,
             diag_line: solved.diag_line,
         });
+    }
+    // FND-302 once per probe, at its worst point, as the main command does per run.
+    if let Some(w) =
+        worst_rel.and_then(|rel| nec_solver::validate::residual_caveat_at(rel, threshold))
+    {
+        eprintln!("{}warning: {w}", cfg.stderr_prefix);
     }
     Ok(points)
 }
@@ -1541,7 +1551,10 @@ pub(super) fn solve_frequency_point(
         );
     }
     let diag_spread = matrix_diagonal_spread(&z_mat);
-    let mut sin_rel_res: f64 = 0.0;
+    // `None` unless the sinusoidal basis ran: its pre-fallback residual. A 0 for
+    // every other route read as a perfect sinusoidal solve that never happened, the
+    // FND-306 class, so it prints `n/a` too (D8).
+    let mut sin_rel_res: Option<f64> = None;
     // Set by the current-source path: the solved port voltage V (feedpoint Z=V/i0).
     let mut current_source_port: Option<Complex64> = None;
 
@@ -1552,7 +1565,7 @@ pub(super) fn solve_frequency_point(
     // not say: the label read `gpu(cpu-fallback)` on every point, including the
     // ones the device solved.
     let mut ran_on_gpu = false;
-    let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
+    let (i_vec, diag_res, diag_label) = match solver_mode {
         SolverMode::Hallen => {
             // One decision, shared with the GUI, the bindings and the worker
             // (FND-121). It used to be four arms here and nowhere else, so those
@@ -1588,8 +1601,17 @@ pub(super) fn solve_frequency_point(
                 // Against `z_mat`, which at 128 segments or more is the device's
                 // own f32 fill: the check confirms the solve of that system, not
                 // of the f64 problem (FND-307, open).
-                let (a, r) = residual_hallen(&z_mat, &sol.currents, &h, &hallen_rhs.rhs);
-                (sol.currents, a, r, "hallen")
+                let res = nec_solver::ResidualInputs::plain(
+                    h,
+                    hallen_rhs.rhs.clone(),
+                    merged_endpoints.clone(),
+                )
+                .residual(&z_mat, &sol.currents);
+                (
+                    sol.currents,
+                    Some((res, nec_solver::validate::ResidualKind::DeviceF32)),
+                    "hallen",
+                )
             } else {
                 let routed = nec_solver::solve_hallen_routed(
                     deck,
@@ -1601,17 +1623,26 @@ pub(super) fn solve_frequency_point(
                 .map_err(|e| e.to_string())?;
                 current_source_port = routed.port_voltage;
                 network_branch.clone_from(&routed.network_branch);
-                let (a, r) = match &routed.residual_inputs {
-                    Some(ri) => residual_hallen(&z_mat, &routed.currents, &ri.homogeneous, &ri.rhs),
-                    None => (0.0, 0.0),
-                };
-                (routed.currents, a, r, routed.route.mode_label())
+                // Computed by the session against the system it solved, corner term
+                // included (FND-302); `None` where the route computes none, which
+                // the diag line prints as `n/a`, not as a perfect 0 (FND-306).
+                (
+                    routed.currents,
+                    routed
+                        .residual
+                        .map(|r| (r, nec_solver::validate::ResidualKind::HallenF64)),
+                    routed.route.mode_label(),
+                )
             }
         }
         SolverMode::Pulse => {
             let i = solve(&z_mat, &v_vec_pulse).map_err(|e| e.to_string())?;
-            let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
-            (i, a, r, "pulse")
+            let res = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
+            (
+                i,
+                Some((res, nec_solver::validate::ResidualKind::Pulse)),
+                "pulse",
+            )
         }
         SolverMode::Continuity => {
             if !per_wire_basis_feasible {
@@ -1619,27 +1650,39 @@ pub(super) fn solve_frequency_point(
                     "warning: continuity solver requires >=2 segments per wire; falling back to pulse"
                 );
                 let i = solve(&z_mat, &v_vec_pulse).map_err(|e| e.to_string())?;
-                let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
-                (i, a, r, "continuity->pulse")
+                let res = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
+                (
+                    i,
+                    Some((res, nec_solver::validate::ResidualKind::Pulse)),
+                    "continuity->pulse",
+                )
             } else {
                 let i = solve_with_continuity_basis_per_wire(&z_mat, &v_vec_pulse, wire_endpoints)
                     .map_err(|e| e.to_string())?;
                 let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
                 if r <= CONTINUITY_REL_RESIDUAL_MAX {
-                    (i, a, r, "continuity")
+                    (
+                        i,
+                        Some(((a, r), nec_solver::validate::ResidualKind::Pulse)),
+                        "continuity",
+                    )
                 } else {
                     eprintln!(
                         "warning: continuity residual {:.3e} > {:.3e}; falling back to pulse",
                         r, CONTINUITY_REL_RESIDUAL_MAX
                     );
                     let i2 = solve(&z_mat, &v_vec_pulse).map_err(|e| e.to_string())?;
-                    let (a2, r2) = residual_zi_minus_v(&z_mat, &i2, &v_vec_pulse);
-                    (i2, a2, r2, "continuity->pulse(residual)")
+                    let res2 = residual_zi_minus_v(&z_mat, &i2, &v_vec_pulse);
+                    (
+                        i2,
+                        Some((res2, nec_solver::validate::ResidualKind::Pulse)),
+                        "continuity->pulse(residual)",
+                    )
                 }
             }
         }
         SolverMode::Sinusoidal => {
-            let (i, a, r, label) = {
+            let (i, res, label) = {
                 // NEC2-style sinusoidal Galerkin basis on the Hallén integral equation.
                 // Uses the Hallén thin-wire Z-matrix (assembled above) with piecewise-
                 // sinusoidal expansion functions and pulse testing (projection).
@@ -1688,10 +1731,22 @@ pub(super) fn solve_frequency_point(
                     wire_endpoints,
                     &junction_tuples,
                 );
-                let (a, r) = residual_hallen(&z_mat, &sol.currents, &h, &hallen_rhs.rhs);
-                sin_rel_res = r;
+                let (a, r) = nec_solver::ResidualInputs::plain(
+                    h,
+                    hallen_rhs.rhs.clone(),
+                    sin_endpoints.clone(),
+                )
+                .residual(&z_mat, &sol.currents);
+                sin_rel_res = Some(r);
                 if r <= sin_fallback_rel_max {
-                    (sol.currents, a, r, "sinusoidal")
+                    (
+                        sol.currents,
+                        Some((
+                            (a, r),
+                            nec_solver::validate::ResidualKind::SinusoidalProjection,
+                        )),
+                        "sinusoidal",
+                    )
                 } else {
                     eprintln!(
                         "warning: sinusoidal residual {:.3e} > {:.3e}; falling back to hallen",
@@ -1713,12 +1768,20 @@ pub(super) fn solve_frequency_point(
                         wire_endpoints,
                         &junction_tuples,
                     );
-                    let (a2, r2) =
-                        residual_hallen(&z_mat, &hallen_sol.currents, &h2, &hallen_rhs.rhs);
-                    (hallen_sol.currents, a2, r2, "sinusoidal->hallen(residual)")
+                    let res2 = nec_solver::ResidualInputs::plain(
+                        h2,
+                        hallen_rhs.rhs.clone(),
+                        sin_endpoints.clone(),
+                    )
+                    .residual(&z_mat, &hallen_sol.currents);
+                    (
+                        hallen_sol.currents,
+                        Some((res2, nec_solver::validate::ResidualKind::HallenF64)),
+                        "sinusoidal->hallen(residual)",
+                    )
                 }
             };
-            (sin_order.restore_currents(&i), a, r, label)
+            (sin_order.restore_currents(&i), res, label)
         }
         SolverMode::Mpie => {
             // One mapping for every variant: the special-cased `NoVoltageSource`
@@ -1727,7 +1790,8 @@ pub(super) fn solve_frequency_point(
             let currents =
                 nec_solver::solve_mpie_session(deck, segs, ground, freq_hz, laplace_loads)
                     .map_err(|e| format!("--solver mpie: {e}"))?;
-            (currents, 0.0, 0.0, "mpie")
+            // The MPIE computes no residual: "n/a", not a perfect 0 (FND-306).
+            (currents, None, "mpie")
         }
     };
 
@@ -2024,14 +2088,14 @@ pub(super) fn solve_frequency_point(
         power_budget,
     }));
     let diag_line = format!(
-        "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e} diag_spread={:.6e} sin_rel_res={:.6e} sin_fallback_rel_max={:.6e} {}",
+        "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={} rel_res={} diag_spread={:.6e} sin_rel_res={} sin_fallback_rel_max={:.6e} {}",
         pulse_rhs_mode,
         exec_label(execution_mode, ran_on_gpu),
         freq_hz / 1e6,
-        diag_abs,
-        diag_rel,
+        residual_field(diag_res.map(|((a, _), _)| a)),
+        residual_field(diag_res.map(|((_, r), _)| r)),
         diag_spread,
-        sin_rel_res,
+        residual_field(sin_rel_res),
         sin_fallback_rel_max,
         decision_record(&DecisionInputs {
             deck,
@@ -2055,13 +2119,20 @@ pub(super) fn solve_frequency_point(
         pulse_rhs: pulse_rhs_mode.as_contract_str().to_string(),
         exec: exec_label(execution_mode, ran_on_gpu).to_string(),
         freq_mhz: freq_hz / 1e6,
-        abs_res: diag_abs,
-        rel_res: diag_rel,
-        diag_spread,
+        abs_res: diag_res.map(|((a, _), _)| a),
+        rel_res: diag_res.map(|((_, r), _)| r),
+        diag_spread: Some(diag_spread),
         sin_rel_res,
     };
 
+    // Judged or not is the residual's kind, set where it was computed: a device
+    // (f32) solve, the sinusoidal projection and the pulse bases are not judged
+    // by the FND-302 caveat (`ResidualKind::judged_by_hallen_caveat`).
+    let hallen_rel_res = diag_res
+        .filter(|(_, kind)| kind.judged_by_hallen_caveat())
+        .map(|((_, r), _)| r);
     Ok(FrequencySolveResult {
+        hallen_rel_res,
         report,
         diag_line,
         bench,

@@ -255,6 +255,7 @@ fn main() -> ExitCode {
         vars_path,
         loads_config_path,
         sin_fallback_rel_max_cli,
+        hallen_residual_caveat_cli,
         hosts_path,
         path,
     } = match parse_args(&args) {
@@ -300,6 +301,19 @@ fn main() -> ExitCode {
         }
     } else {
         SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT
+    };
+    // The FND-302 caveat's threshold: the flag, else the environment, else 1e-5,
+    // with the same precedence and refusal as `--sin-fallback-rel-max`.
+    let hallen_residual_caveat = match hallen_residual_caveat_cli
+        .map_or_else(nec_solver::validate::residual_caveat_threshold, Ok)
+    {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("fnec {}", VERSION);
+            eprintln!("{USAGE}");
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
     };
 
     let input = match std::fs::read_to_string(&path) {
@@ -835,6 +849,7 @@ fn main() -> ExitCode {
     // between the local and distributed sweep paths (verified: identical md5),
     // which is how a policy decision comes to be made twice and, eventually,
     // differently.
+    warn_residual_for_run(&solved, hallen_residual_caveat);
     warn_negative_resistance_for_run(&solved, deck, &segs, solver_mode);
     let any_failed = emit_sweep_points(
         solved,
@@ -1039,6 +1054,26 @@ fn worker_warning_lines(
         .map(|w| format!("warning: worker '{label}': {w}"))
         .filter(|line| seen.insert(line.clone()))
         .collect()
+}
+
+/// Print the run's FND-302 caveat once, at its worst judged residual: the
+/// residual is a property of the solve, and a sweep should not repeat it per
+/// point. Local runs only — a `--hosts` point carries no residual, and the
+/// worker sends its own caveat among its warnings.
+fn warn_residual_for_run<T>(
+    solved: &[(usize, Result<FrequencySolveResult, String>, T)],
+    threshold: f64,
+) {
+    let worst = solved
+        .iter()
+        .filter_map(|(_, r, _)| r.as_ref().ok())
+        .fold(None, |acc, r| {
+            nec_solver::validate::worst_residual(acc, r.hallen_rel_res)
+        });
+    if let Some(w) = worst.and_then(|rel| nec_solver::validate::residual_caveat_at(rel, threshold))
+    {
+        eprintln!("warning: {w}");
+    }
 }
 
 /// Print the run's negative-resistance caveat once — per point for a single
@@ -1277,10 +1312,12 @@ fn run_distributed_solve(
                     // the same whether the work ran on a GPU or a CPU.
                     exec: format!("ssh-{exec_used}"),
                     freq_mhz,
-                    abs_res: 0.0,
-                    rel_res: 0.0,
-                    diag_spread: 0.0,
-                    sin_rel_res: 0.0,
+                    // The worker sends no residual and no diagonal spread:
+                    // `null`, not a perfect 0 (FND-306, D8).
+                    abs_res: None,
+                    rel_res: None,
+                    diag_spread: None,
+                    sin_rel_res: None,
                 };
                 // FND-014, controller-side on purpose. Putting this in the worker
                 // would reproduce the gap under version skew: a worker is a
@@ -1307,6 +1344,9 @@ fn run_distributed_solve(
                     caveat: None,
                 });
                 Ok(FrequencySolveResult {
+                    // The worker judges its own residual and sends the caveat
+                    // among its warnings, which the controller prints.
+                    hallen_rel_res: None,
                     report: PointOutput::Text(report),
                     diag_line,
                     bench,

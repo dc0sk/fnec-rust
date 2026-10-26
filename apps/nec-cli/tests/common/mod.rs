@@ -39,6 +39,28 @@ pub fn assert_diag_field(stderr: &str, key: &str, expected_value: &str) {
     );
 }
 
+/// A residual field the route did not compute: `n/a`, never a perfect-looking 0
+/// (FND-306, D8).
+pub fn assert_diag_field_not_computed(stderr: &str, key: &str) {
+    assert_diag_field(stderr, key, "n/a");
+}
+
+/// A residual field as a number, or `None` for `n/a` (FND-306). Panics on
+/// anything else, so a third spelling cannot slip through as "not computed".
+pub fn diag_residual(stderr: &str, key: &str) -> Option<f64> {
+    let raw = diag_field(stderr, key)
+        .unwrap_or_else(|| panic!("missing diag field '{key}' in stderr:\n{stderr}"));
+    if raw == "n/a" {
+        return None;
+    }
+    Some(
+        raw.parse::<f64>()
+            .unwrap_or_else(|e| panic!("diag field '{key}={raw}' is neither n/a nor f64: {e}")),
+    )
+}
+
+/// The field is a finite, non-negative number — `n/a` fails this, by design:
+/// call it only where the route computes the field.
 pub fn assert_diag_field_is_finite_nonnegative(stderr: &str, key: &str) {
     let raw = diag_field(stderr, key)
         .unwrap_or_else(|| panic!("missing diag field '{key}' in stderr:\n{stderr}"));
