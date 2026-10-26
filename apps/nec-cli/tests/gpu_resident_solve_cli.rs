@@ -267,3 +267,93 @@ fn a_deck_past_the_old_gpu_ceilings_solves_on_the_device() {
         "device {re} + j{im} against the CPU's 79.692336 + j46.433387"
     );
 }
+
+/// Run fnec on a scratch copy of `deck` with `args`; (stdout, stderr).
+fn run_deck(name: &str, deck: &str, args: &[&str]) -> (String, String) {
+    let path = std::env::temp_dir().join(format!("fnec-fill-{name}-{}.nec", std::process::id()));
+    std::fs::write(&path, deck).expect("write deck");
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .args(args)
+        .arg(&path)
+        .output()
+        .unwrap_or_else(|e| panic!("failed to spawn fnec: {e}"));
+    let _ = std::fs::remove_file(&path);
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(out.status.success(), "fnec {args:?} failed:\n{stderr}");
+    (String::from_utf8_lossy(&out.stdout).into_owned(), stderr)
+}
+
+/// A 201-segment λ/2 dipole at 29.9 MHz, `extra` after `GE 0`.
+fn dipole_201(extra: &str) -> String {
+    format!(
+        "CE\nGW 1 201 0 0 -2.5 0 0 2.5 0.001\nGE 0\n{extra}EX 0 1 101 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n"
+    )
+}
+
+/// FND-293: a point the GPU-resident solve declines is filled on the CPU in f64,
+/// so `--exec gpu` answers it exactly as `--exec cpu` does — and as the worker
+/// does, which always fills in f64 — and the record says where the fill ran.
+///
+/// The device used to fill the matrix in f32 for every free-space `--exec gpu`
+/// deck of 128 segments or more, and when the resident solve then declined, the
+/// CPU solved the f32 matrix: on the loaded deck 106.383566 + j36.388674 against
+/// 106.383595 + j36.388745, recorded `solve_exec=cpu` with no word of the f32
+/// fill. The loaded deck and a bent one (path basis) are the two kinds of
+/// decline. Runs on any host: without an adapter the device fill could not run
+/// either, so on such a host the comparison cannot fail — where there is one it
+/// turned red with the old unconditional fill.
+#[test]
+fn a_point_the_device_does_not_solve_is_filled_in_f64() {
+    let bent = "CE\nGW 1 100 0 0 0 2.5 0 0 .001\nGW 2 100 2.5 0 0 2.5 0 2.5 .001\nGE 0\nEX 0 1 50 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n";
+    let loaded = dipole_201("LD 4 1 50 50 50 0\n");
+    for (name, deck) in [("loaded", loaded.as_str()), ("bent", bent)] {
+        let (cpu_out, cpu_err) = run_deck(&format!("{name}-cpu"), deck, &["--exec", "cpu"]);
+        let (gpu_out, gpu_err) = run_deck(&format!("{name}-gpu"), deck, &["--exec", "gpu"]);
+        common::assert_diag_field(&cpu_err, "fill_exec", "cpu");
+        common::assert_diag_field(&gpu_err, "fill_exec", "cpu");
+        common::assert_diag_field(&gpu_err, "solve_exec", "cpu");
+        // The whole report — feedpoint, currents — to the byte: the same f64
+        // arithmetic. The f32 fill moved the currents in their fifth digit.
+        assert_eq!(
+            gpu_out, cpu_out,
+            "{name}: --exec gpu differs from --exec cpu"
+        );
+    }
+}
+
+/// The record's controls: a point the device takes is filled and solved there
+/// (`fill_exec=gpu solve_exec=gpu`); a resident solve below the 128-segment fill
+/// floor reads `fill_exec=cpu solve_exec=gpu`, because the device re-fills from
+/// raw segment inputs for its own solve and the host matrix serves only the
+/// residual check; `--exec cpu` and the MPIE fill on the CPU.
+///
+/// The device half needs a hardware adapter, so it is dormant in CI (which has
+/// none) and runs on a GPU host; it says SKIP when it does not run.
+#[test]
+fn the_record_names_where_the_matrix_was_filled() {
+    let big = dipole_201("");
+    let (_, cpu_err) = run_deck("big-cpu", &big, &["--exec", "cpu"]);
+    common::assert_diag_field(&cpu_err, "fill_exec", "cpu");
+    common::assert_diag_field(&cpu_err, "solve_exec", "cpu");
+    let (_, mpie_err) = run_deck("big-mpie", &big, &["--solver", "mpie", "--exec", "gpu"]);
+    common::assert_diag_field(&mpie_err, "fill_exec", "cpu");
+
+    let small =
+        "CE\nGW 1 51 0 0 -5.282 0 0 5.282 .001\nGE 0\nEX 0 1 26 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    for (name, deck, fill) in [("big", big.as_str(), "gpu"), ("small", small, "cpu")] {
+        let attempt = gpu_attempt(name, || {
+            let (_, stderr) = run_deck(&format!("{name}-gpu"), deck, &["--exec", "gpu"]);
+            match classify_gpu_stderr(&stderr) {
+                GpuRun::OnDevice => Ok(stderr),
+                GpuRun::Missed(why) => Err(why),
+                GpuRun::Declined(line) => panic!("{name}: the device declined: {line}"),
+            }
+        });
+        let Ok(stderr) = attempt else {
+            eprintln!("SKIP: no wgpu adapter on this host — {name}'s device record not checked");
+            continue;
+        };
+        common::assert_diag_field(&stderr, "fill_exec", fill);
+        common::assert_diag_field(&stderr, "solve_exec", "gpu");
+    }
+}

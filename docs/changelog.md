@@ -58,6 +58,28 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`--exec gpu` fills the matrix in f32 only for a point the device solves, and
+  the `diag:` record says where the fill ran** (FND-293). The device filled the
+  Z-matrix of every free-space `--exec gpu` deck of 128 segments or more; when the
+  GPU-resident solve then declined the point — a load, a bend — the CPU solved
+  that f32 matrix: 106.383566 + j36.388674 Ω against `--exec cpu`'s
+  106.383595 + j36.388745 Ω on a 201-segment dipole with `LD 4 1 50 50 50 0`,
+  recorded `solve_exec=cpu` with nothing about the fill, and different from a
+  `--hosts` worker, which fills in f64. Whether the resident solve takes a point is
+  now decided once, before the fill (class, stamps, Laplace loads, size and the
+  homogeneous-span test); a declined point is filled in f64 and answers as
+  `--exec cpu` to the byte. The new `fill_exec=cpu|gpu` field, before
+  `solve_exec`, names the fill's executor; `fill_exec=cpu solve_exec=gpu` is a
+  resident solve of 16–127 segments, below the fill's floor
+  (`docs/cli-guide.md`).
+- **The automatic `--exec` pick asks the solve's own predicate** (FND-297 a). It
+  kept any deck with an `LD`, `TL` or `NT` card on the CPU, so an 801-segment
+  dipole with `LD 4 1 200 200 0 0` — a load that stamps nothing — was picked
+  `cpu` where `--exec gpu` solved it on the device (both 79.784 + j42.218 Ω).
+  `nec_solver::gpu_resident_decline` asks the stamps by value at every run
+  frequency, and is the one copy for the pick, the CLI's fill and resident solve,
+  and the worker.
+
 - **`--output-format nec2d` refuses `--ground-solver sommerfeld` over a finite
   ground** (FND-286). The correction adds the surface wave to the feedpoint
   impedance only, and the NEC-2D feed row takes Z from V and I. On a dipole

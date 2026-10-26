@@ -629,20 +629,16 @@ fn main() -> ExitCode {
     // disagree. Local runs only, so it sits below the `--hosts` branch: a worker
     // is told `gpu` only when the user said so (FND-040), never by a pick made
     // from the controller's hardware.
-    let stamped = deck.cards.iter().any(|c| {
-        matches!(
-            c,
-            nec_model::card::Card::Ld(_)
-                | nec_model::card::Card::Tl(_)
-                | nec_model::card::Card::Nt(_)
-        )
-    });
+    //
+    // The solve's own predicate, asked at every run frequency: the device takes a
+    // point only when nothing is stamped at that point, so a pick made on which
+    // card types are present kept a deck whose `LD` stamps zero on the CPU while
+    // `--exec gpu` solved it on the device (FND-297 a).
     let gpu_deck_class = if !matches!(solver_mode, SolverMode::Hallen) {
         Err("the device solves the Hallén basis only")
-    } else if stamped || !laplace_loads.is_empty() {
-        Err("the deck stamps loads or networks into the matrix, which the device does not see")
     } else {
-        nec_solver::gpu_resident_class(deck, &segs, &ground)
+        nec_solver::gpu_resident_decline(deck, &segs, &ground, &freqs_hz, &laplace_loads)
+            .map_or(Ok(()), Err)
     };
     // Two homogeneous unknowns per straight wire with two free ends: the system
     // the device holds is S = N + 2W.

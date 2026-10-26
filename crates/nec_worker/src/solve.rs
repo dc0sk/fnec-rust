@@ -540,14 +540,12 @@ fn solve_inner(
     let gpu_eligible = exec == "gpu"
         && segs.len() >= MIN_GPU_RESIDENT_SEGS
         // The device solves the plain delta-gap route on the merged-straight
-        // basis, in free space — the one class shared with the CLI's solve and
-        // its automatic pick.
-        && nec_solver::gpu_resident_class(&deck, &segs, &ground).is_ok()
-        // The device re-solves from raw segment inputs, discarding host-side
-        // stamps. This gate was already value-based rather than a card-type list,
-        // which is why it never had the CLI's NT hole (FND-023) — it now asks the
-        // same question through the shared seam.
-        && stamps.is_identity();
+        // basis, in free space, and re-solves from raw segment inputs, discarding
+        // host-side stamps — the one predicate shared with the CLI's solve, its
+        // fill and its automatic pick (FND-297 a). This gate was already
+        // value-based rather than a card-type list, which is why it never had the
+        // CLI's NT hole (FND-023). A worker has no Laplace loads.
+        && nec_solver::gpu_resident_decline(&deck, &segs, &ground, &[freq_hz], &[]).is_none();
 
     // The device solves the merged-conductor basis the CLI's GPU-resident path
     // uses: collinear `GW` runs as one conductor, a junction row only where

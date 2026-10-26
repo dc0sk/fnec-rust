@@ -40,13 +40,13 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/refusal_remedy.rs` | 8 | FND-271 — a Hallén-only refusal names the MPIE the way each frontend reaches it; FND-276 — only for a deck the MPIE solves (end feed, feed between junctions, wire on the ground refused without it; a caveat drops the MPIE remedy for an end-fed deck) | — |
 | `apps/nec-cli/tests/sinusoidal_chain_order.rs` | 6 | FND-233 — `--solver sinusoidal` solves a collinear chain in any `GW` order: a loaded, unequally segmented split dipole gives the same Z and the same current on every deck segment in three orders, on the plain route, within 2 % of Hallén; a scrambled T is still refused; FND-249 — a reversed middle wire fed on itself equals the forward chain in every order, and the `GX` dipole equals the one-wire dipole current for current, each segment in its own sense. | FND-233, FND-249 |
 | `apps/nec-cli/tests/ex_cards.rs` | 11 | `EX` types 0/1/3 feedpoint parity; unsupported types rejected | CP-003, PH8-CHK-001/002 (baseline) |
-| `apps/nec-cli/tests/exec_auto.rs` | 12 | Without `--exec` the deck picks CPU or GPU: 599 segments is the CPU to the byte, 601 (one point) the GPU within 2 Ω where there is one, a sweep below 800 stays on the CPU and past it counts its device points, a bent or loaded large deck stays on the CPU; the small-deck GPU warning prints once per run | FND-185, FND-190 |
+| `apps/nec-cli/tests/exec_auto.rs` | 13 | Without `--exec` the deck picks CPU or GPU: 599 segments is the CPU to the byte, 601 (one point) the GPU within 2 Ω where there is one, a sweep below 800 stays on the CPU and past it counts its device points, a bent or loaded large deck stays on the CPU, while one whose `LD` stamps zero gets its LD-free twin's pick (FND-297 a); the small-deck GPU warning prints once per run | FND-185, FND-190, FND-297 |
 | `apps/nec-cli/tests/exec_modes.rs` | 27 | `--exec` selection, drop-in alias resolution (a kernel name with a deck is plain fnec: the retired filename steering prints nothing, PAR-011), sandbox paths; a parallel CPU sweep is ordered and byte-identical to a single-thread run (the hybrid lane's re-run is `nec_accel::gpu_test`'s, tested there, FND-215) | DEC-003, CP-012 |
 | `apps/nec-cli/tests/experimental_solver_gate.rs` | 3 | pulse/continuity refused without `--experimental-solver`; with it every text report and JSON record carries the caveat; validated solvers unchanged, shown to have printed their results (FND-080, FND-296) | NFR-004 |
 | `apps/nec-cli/tests/gain_load_loss.rs` | 3 | FND-200: a lossy load costs gain in free space and over PEC — vs nec2c at two meshes with unloaded controls, a `--loads-config` twin equal to its `LD` card, and the RP A-digit average power gain equal to the efficiency. | FND-200 |
 | `apps/nec-cli/tests/geometry_diagnostics.rs` | 18 | Fail-fast on crossing wires / tiny source; valid junctions accepted | FR-009, PH2-CHK-006 |
 | `apps/nec-cli/tests/gpu_benchmark_gate.rs` | 1 | Gate G5: the GPU RP far-field kernel ≤1.5× the CPU far-field on the 2701-point grid, in-process with the device initialised once (best-of-N); skips only without a hardware adapter (FND-165) | PH5-CHK-005, PH7-CHK-002 |
-| `apps/nec-cli/tests/gpu_resident_solve_cli.rs` | 3 | `--exec gpu` feedpoint Z within 2 Ω of CPU on corpus; a 2049-segment deck, past the old dispatch and `MAX_S` ceilings, solves on the device (FND-188/189) | PH7-CHK-003 |
+| `apps/nec-cli/tests/gpu_resident_solve_cli.rs` | 5 | `--exec gpu` feedpoint Z within 2 Ω of CPU on corpus; a 2049-segment deck, past the old dispatch and `MAX_S` ceilings, solves on the device (FND-188/189); a point the device does not solve (loaded, bent) is filled in f64 and answers as `--exec cpu` to the byte, and `fill_exec` names where the matrix was filled (device half dormant without an adapter) (FND-293) | PH7-CHK-003 |
 | `apps/nec-cli/tests/gpu_rp_exec.rs` | 4 | Gate G4: `--exec gpu` RP far-field matches CPU | PH5-CHK-004 |
 | `apps/nec-cli/tests/ground_diagnostics.rs` | 12 | `GN` handling: GE 1 + GN 1 over PEC, GN0/GN2 active; the finite-ground contact refusal names two models, each run at two meshes against nec2c's converged value (FND-240) | PRT-001, PH2-CHK-001/002 |
 | `apps/nec-cli/tests/ground_flags_nec2c.rs` | 7 | FND-241/242/243 — `GE`/`GN` as nec2c reads them: the ground from the last `GN` alone (a raised wire's answer independent of `GE`), undefined values and `GE 1` without `GN` refused by name, a wire on the ground without `GE 1` refused with its remedy converging to nec2c at 21 and 63 segments, and nec2c's 10⁻³-of-a-segment contact band; FND-283 — a GN radial screen over a finite ground refused, the GN fields nec2c ignores (I2–F6 over GN 1/−1, I3/I4, a second medium) ignored with a warning and the answer unchanged | FND-241, FND-242, FND-243, FND-283 |
@@ -137,6 +137,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/finite_ground_rp.rs` | 5 | PH8-CHK-006: radiation pattern over finite ground via the Fresnel reflection-coefficient far field. | PH8-CHK-006 |
 | `crates/nec_solver/tests/general_junction.rs` | 10 | PH9-CHK-002 (general junction case): a single physical conductor whose two arms meet at a degree-2 junction — start-to-start splits and bent inverted-V feeds — must solve to a p… | PH9-CHK-002 |
 | `crates/nec_solver/tests/gm_nec2c.rs` | 8 | FND-119 — the `GM` card, pinned against `nec2c`. | FND-119 |
+| `crates/nec_solver/tests/gpu_resident_decline.rs` | 7 | `gpu_resident_decline`, the one "does the device solve this deck" predicate: a zero-valued `LD` and its LD-free twin both `None`; a non-zero `LD`, an `NT` (zero admittances too), a Laplace load, a bend and a ground each `Some` with their reason; every frequency of the run asked (a series LC that stamps exactly zero at ω = 1 rad/s only) | FND-293, FND-297 |
 | `crates/nec_solver/tests/ground_contact.rs` | 11 | Wires on PEC ground by explicit images: monopole and grounded array vs nec2c, identity with the doubled free-space deck, base-load identity, unrepresentable contacts and unmirrored drives refused (FND-082); a current source on contact prices as the voltage source to round-off (straight, bent, top-hat); TL/NT on contact equal an independently drawn free-space double and track nec2c at two meshes; a current source with a network stays refused | NFR-004 |
 | `crates/nec_solver/tests/ground_impedance.rs` | 3 | Near-ground impedance: ground ΔZ vs nec2c — horizontal (R drops), vertical near-ground (R rises +18Ω), and 0.25λ vs Sommerfeld truth | PH9-CHK-006 |
 | `crates/nec_solver/tests/lossy_tl.rs` | 3 | PH8-CHK-005: lossy transmission line — fnec's F8 extension (matched-line loss in dB) on the NEC-2 TL layout (FND-111). | FND-111, FND-123, PH8-CHK-005 |
@@ -169,7 +170,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=898 --> **898** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=908 --> **908** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -194,7 +195,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=709 --> **709** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1614 --> **1614** = 709 unit + 898 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1624 --> **1624** = 709 unit + 908 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

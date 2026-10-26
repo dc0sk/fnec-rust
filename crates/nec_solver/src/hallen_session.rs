@@ -130,6 +130,47 @@ pub fn gpu_resident_class(
     Ok(())
 }
 
+/// Why the GPU-resident solve does not take this deck at every one of
+/// `freqs_hz`, or `None` when it does: [`gpu_resident_class`], plus nothing
+/// stamped into the matrix at any of them — the deck's own `LD`/`TL`/`NT` asked
+/// by value through [`crate::build_deck_stamps`]`(…).is_identity()` (FND-023),
+/// and no Laplace load. The class is asked once; the stamps at each frequency.
+/// The device re-fills and solves from raw segment inputs, so a stamp would be
+/// lost there.
+///
+/// The one copy of "does the device solve this deck" for the CLI's automatic
+/// pick (at every run frequency), the CLI's matrix fill and resident attempt,
+/// and the worker. The pick used to ask which card types were present, so an
+/// `LD` that stamps zero kept a deck on the CPU that the solve would have taken
+/// on the device (FND-297 a).
+///
+/// What it does not ask, because only the solve holds the facts: the device's
+/// segment floor and adapter, and whether the excitation lies in the homogeneous
+/// span (FND-227), which needs the frequency's right-hand side.
+pub fn gpu_resident_decline(
+    deck: &NecDeck,
+    segs: &[Segment],
+    ground: &crate::geometry::GroundModel,
+    freqs_hz: &[f64],
+    laplace: &[crate::loads::LaplaceLoad],
+) -> Option<&'static str> {
+    if let Err(why) = gpu_resident_class(deck, segs, ground) {
+        return Some(why);
+    }
+    if freqs_hz
+        .iter()
+        .any(|&f| !crate::stamps::build_deck_stamps(deck, segs, f).is_identity())
+    {
+        return Some(
+            "the deck stamps loads or networks into the matrix, which the device does not see",
+        );
+    }
+    if !laplace.is_empty() {
+        return Some("the run's Laplace loads stamp the matrix, which the device does not see");
+    }
+    None
+}
+
 /// True if the deck carries an incident-plane-wave `EX` card (NEC-2 types 1/2/3).
 pub fn deck_has_plane_wave(deck: &NecDeck) -> bool {
     deck.cards
