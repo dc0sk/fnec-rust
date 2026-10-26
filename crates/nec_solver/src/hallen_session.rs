@@ -2564,3 +2564,44 @@ mod radius_step_route_tests {
         assert!(!takes_graph(&deck, &segs), "a taper has no node to take");
     }
 }
+
+/// FND-305 beneath the frontends' refusal (U3): every frontend refuses a TL/NT
+/// port on a segment two `EX` cards drive, so the network solve's `driven` list
+/// can only be reached here. With the owner, the port is priced from the drive
+/// the structure is solved with — the last card's — so the currents equal the
+/// one-card deck's. fnec-consistency, no reference: nec2c's own answer mixes the
+/// two cards (FND-305), which is why the frontends refuse.
+#[cfg(test)]
+mod multiply_fed_port_tests {
+    use super::*;
+    use crate::geometry::{build_geometry, ground_model_from_deck};
+    use crate::matrix::assemble_z_matrix_with_ground;
+
+    fn currents(cards: &str) -> Vec<Complex64> {
+        let src = format!(
+            "CE\nGW 1 21 0 0 -2.5 0 0 2.5 0.001\nGW 2 21 1 0 -2.5 1 0 2.5 0.001\nGE 0\n\
+             {cards}TL 1 11 2 11 50 0 0 0 0 0\nFR 0 1 0 0 29.9 0\nEN\n"
+        );
+        let deck = nec_parser::parse(&src).expect("parses").deck;
+        let segs = build_geometry(&deck).expect("geometry");
+        let mut z = assemble_z_matrix_with_ground(&segs, 29.9e6, &ground_model_from_deck(&deck));
+        let loads = vec![Complex64::new(0.0, 0.0); segs.len()];
+        solve_hallen_routed(&deck, &segs, &mut z, 29.9e6, &loads)
+            .expect("routed solve")
+            .currents
+    }
+
+    #[test]
+    fn a_port_on_a_doubly_fed_segment_is_priced_from_the_drive_applied() {
+        let two = currents("EX 0 1 11 0 1 0\nEX 0 1 11 0 0.5 0\n");
+        let half = currents("EX 0 1 11 0 0.5 0\n");
+        let one = currents("EX 0 1 11 0 1 0\n");
+        assert!(
+            two.iter().zip(&one).any(|(a, b)| (a - b).norm() > 1e-6),
+            "the control: the two drives differ"
+        );
+        for (a, b) in two.iter().zip(&half) {
+            assert!((a - b).norm() <= 1e-12 * b.norm().max(1e-9), "{a} vs {b}");
+        }
+    }
+}

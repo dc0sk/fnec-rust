@@ -221,7 +221,7 @@ reads it, and none counts or iterates cards to decide a drive.
 | 2 | `delta_gap_sources` → `build_hallen_rhs` (plain Hallén, sinusoidal) | yes | `an_overridden_card_leaves_the_currents_byte_identical`; `every_route_applies_the_rule` (sinusoidal) |
 | 3 | `build_hallen_rhs_paths` (conductor paths) | yes | `every_route_applies_the_rule` (paths) |
 | 4 | `graph_feeds` (section graph) | yes | `every_route_applies_the_rule` (graph) |
-| 5 | Network `driven` list (`solve_with_networks`, first match) | yes | `a_network_port_on_a_doubly_fed_segment_is_refused` (the elsewhere-port control) |
+| 5 | Network `driven` list (`solve_with_networks`, first match) | yes | `a_port_on_a_doubly_fed_segment_is_priced_from_the_drive_applied` (beneath the frontends' refusal, the only place it is reachable: a per-card list leaves every frontend test green) |
 | 6 | MPIE feeds (`solve_mpie_session`) | yes | `every_route_applies_the_rule` (mpie) |
 | 7 | PEC-contact image deck (cards copied in order) | yes | `every_route_applies_the_rule` (image) |
 | 8 | CLI feedpoint rows (`build_feedpoint_rows`, `feedpoint_abs_segments`) | yes | `the_last_type0_card_drives_the_segment_as_nec2c` |
