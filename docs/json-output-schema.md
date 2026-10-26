@@ -96,6 +96,17 @@ the others used to be dropped with no word (FND-304). Its records name the
 feedpoint's own `tag` and `seg` (they said `0` and `0` until then) and carry a
 one-element `feedpoints`.
 
+### Input-impedance print (EX I4)
+
+The text report's `INPUT_IMPEDANCE` section — NEC-2's input impedance over a
+sweep, normalized to `EX` F3 or to the sweep's largest |Z|, asked for by a
+voltage source's I4 units digit 1 (FND-309) — has **no JSON form yet**. With
+`--output-format json` and two or more frequencies, `fnec` writes the records
+as above and warns on stderr that the table is not written, naming
+`--output-format text` as the remedy. Every point's impedance is in the
+records; the normalization is the one thing missing. A JSON field for it is a
+tracked follow-up (FND-314).
+
 ### Absence of feedpoint data
 
 A deck whose `EX` card names a drive that yields no priceable feedpoint — an

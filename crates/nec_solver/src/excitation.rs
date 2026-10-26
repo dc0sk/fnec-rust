@@ -68,6 +68,81 @@ pub fn more_than_one_feedpoint(deck: &NecDeck) -> Option<usize> {
     (n > 1).then_some(n)
 }
 
+/// What NEC-2 divides the input impedance by in its INPUT IMPEDANCE DATA table.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ImpedanceNorm {
+    /// `F3 > 0`: every point's Z over this constant, in ohms.
+    Fixed(f64),
+    /// `F3 ≤ 0`: every point's Z over the largest `|Z|` of the sweep.
+    Max,
+}
+
+/// An `EX` card's request for the input impedance over a sweep (FND-309):
+/// which feedpoint the table follows and what it is normalized to.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ImpedancePrint<'a> {
+    /// The source's index among [`feedpoints`] — the index of its row in the
+    /// report's FEEDPOINTS, which are built one per card in that order. A row is
+    /// chosen by this, never by `(tag, segment)`: a tag-0 card's row carries its
+    /// wire's tag (FND-282), and two cards on one segment share a pair (FND-305).
+    pub feed_index: usize,
+    /// The card the table follows.
+    pub source: &'a ExCard,
+    /// What every impedance is divided by.
+    pub norm: ImpedanceNorm,
+}
+
+/// The input-impedance print a deck asks for, as nec2c 1.3.1 reads it, or `None`.
+///
+/// - **Whether, and the factor**: the LAST voltage-source card (types 0 and 5)
+///   decides, each overwriting the one before (`main.c:565-568`, `:590-593`):
+///   its I4 units digit 1 asks for the table, and `F3 > 0` fixes the factor,
+///   otherwise it is the sweep's largest `|Z|`. Units digits 2-9 and a negative
+///   F3 are refused by the parser, as NEC-2 does not define them.
+/// - **Which source**: the last type-5 card, or else the last type-0 card —
+///   nec2c's `zped` is overwritten by every ANTENNA INPUT PARAMETERS row, which
+///   lists the type-0 sources and then the type-5 ones (`main.c:1806-1809`). That
+///   need not be the card carrying the digit.
+///
+/// Whether the table prints also depends on the run having two or more solved
+/// frequencies (nec2c prints none for `nfrq == 1`); that is the caller's to
+/// decide, from the points it solved.
+pub fn input_impedance_print(deck: &NecDeck) -> Option<ImpedancePrint<'_>> {
+    use nec_model::card::ExcitationKind;
+    let mut request: Option<&ExCard> = None;
+    let mut last_type0: Option<(usize, &ExCard)> = None;
+    let mut last_type5: Option<(usize, &ExCard)> = None;
+    for (i, (ex, _)) in feedpoints(deck).enumerate() {
+        match ex.kind() {
+            ExcitationKind::VoltageSource => {
+                last_type0 = Some((i, ex));
+                request = Some(ex);
+            }
+            ExcitationKind::VoltageSourceCurrentSlope => {
+                last_type5 = Some((i, ex));
+                request = Some(ex);
+            }
+            _ => {}
+        }
+    }
+    let request = request?;
+    if request.i4 % 10 != 1 {
+        return None;
+    }
+    let (feed_index, source) = last_type5.or(last_type0)?;
+    let f3 = request.polarization_deg;
+    let norm = if f3 > 0.0 {
+        ImpedanceNorm::Fixed(f3)
+    } else {
+        ImpedanceNorm::Max
+    };
+    Some(ImpedancePrint {
+        feed_index,
+        source,
+        norm,
+    })
+}
+
 /// A current source's Hallén shape: `(source_shape, cos_vec, sin_vec,
 /// src_global_index)`, the homogeneous columns built with the same coordinate as
 /// the delta-gap RHS (FND-158).
@@ -736,6 +811,61 @@ mod tests {
             super::more_than_one_feedpoint(&two_wires("EX 0 1 11 0 1 0\nEX 1 1 1 0 0 0 0\n")),
             None
         );
+    }
+
+    /// FND-309's chooser, as nec2c 1.3.1 reads EX I4's units digit: the last
+    /// voltage-source card decides whether and what to normalize to; the source
+    /// is the last type-5 card, else the last type-0 card, named by its index
+    /// among [`feedpoints`].
+    #[test]
+    fn input_impedance_print_follows_nec2c_s_last_card_and_last_source() {
+        use super::{input_impedance_print, ImpedanceNorm};
+        let two_wires = |cards: &str| {
+            deck_of(&format!(
+                "GW 1 11 0 0 -2.5 0 0 2.5 0.001\nGW 2 11 1 0 -2 1 0 2 0.001\nGE 0\n{cards}FR 0 2 0 0 29.9 1\nEN\n"
+            ))
+        };
+        // Fixed when F3 > 0, the sweep's max when F3 = 0 (deck `fixed`, `max`).
+        let d = two_wires("EX 0 1 6 11 1 0 50\n");
+        let p = input_impedance_print(&d).expect("units 1 asks for the table");
+        assert_eq!((p.feed_index, p.norm), (0, ImpedanceNorm::Fixed(50.0)));
+        let d = two_wires("EX 0 1 6 1 1 0 0\n");
+        assert_eq!(input_impedance_print(&d).unwrap().norm, ImpedanceNorm::Max);
+        // Units 0 and no voltage source: no table.
+        assert_eq!(
+            input_impedance_print(&two_wires("EX 0 1 6 10 1 0 50\n")),
+            None
+        );
+        assert_eq!(
+            input_impedance_print(&two_wires("EX 1 1 1 1 0 0 0\n")),
+            None
+        );
+        // The last card decides (deck `two`): its units 0 cancels the earlier 1.
+        let d = two_wires("EX 0 2 6 1 1 0 50\nEX 0 1 6 0 1 0 0\n");
+        assert_eq!(input_impedance_print(&d), None);
+        // ... and its F3, even when the earlier card's was fixed.
+        let d = two_wires("EX 0 1 6 1 1 0 50\nEX 0 2 6 1 1 0 0\n");
+        let p = input_impedance_print(&d).unwrap();
+        assert_eq!((p.feed_index, p.norm), (1, ImpedanceNorm::Max));
+        // The last EX 0 is the source (deck `two2`).
+        let d = two_wires("EX 0 1 6 0 1 0 0\nEX 0 2 6 1 1 0 50\n");
+        let p = input_impedance_print(&d).unwrap();
+        assert_eq!((p.feed_index, p.source.tag), (1, 2));
+        // An EX 5 is preferred to a later EX 0, which still carries the digit
+        // (deck `ex5`).
+        let d = two_wires("EX 5 1 6 0 1 0 0\nEX 0 2 6 1 1 0 50\n");
+        let p = input_impedance_print(&d).unwrap();
+        assert_eq!((p.feed_index, p.source.excitation_type), (0, 5));
+        assert_eq!(p.norm, ImpedanceNorm::Fixed(50.0));
+        // A current source is a feedpoint row but never the table's source: the
+        // index counts it, the choice skips it.
+        let d = two_wires("EX 4 1 6 0 1 0 0\nEX 0 2 6 1 1 0 0\n");
+        let p = input_impedance_print(&d).unwrap();
+        assert_eq!((p.feed_index, p.source.excitation_type), (1, 0));
+        // A tag-0 card is chosen by its index, whatever its (tag, segment) say.
+        let d = two_wires("EX 0 1 6 0 1 0 0\nEX 0 0 17 1 1 0 0\n");
+        let p = input_impedance_print(&d).unwrap();
+        assert_eq!((p.feed_index, p.source.tag, p.source.segment), (1, 0, 17));
     }
 
     // -----------------------------------------------------------------------

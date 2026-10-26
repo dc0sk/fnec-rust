@@ -54,11 +54,6 @@ pub enum Disposition {
     Kept { why: &'static str, warned: bool },
     /// No field of NEC-2's card format: nothing is read here.
     Unused,
-    /// TEMPORARY: should be [`Disposition::Consumed`] and is not — a field fnec
-    /// parses and never reads, found by this guard and not yet decided. The tests
-    /// list it as a failure and tolerate it; one that passes as `Consumed` fails
-    /// until it is promoted.
-    KnownGap(&'static str),
 }
 
 /// One value written at one position, and what fnec does with it.
@@ -134,7 +129,7 @@ const fn kept_warned(why: &'static str) -> Disposition {
     Disposition::Kept { why, warned: true }
 }
 
-use Disposition::{Consumed as C, Ignored, KnownGap, Refused, Silent, Unused};
+use Disposition::{Consumed as C, Ignored, Refused, Silent, Unused};
 
 const UNUSED: &[Probe] = &[p("1", Unused)];
 
@@ -146,6 +141,8 @@ const WIRE_THEN: &str = "CM probe\nCE\nGW 1 11 0 0 -2.5 0 0 2.5 0.001\n{card}\nG
                          EX 0 1 6 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n";
 const SOURCE: &str = "CM probe\nCE\nGW 1 11 0 0 -2.5 0 0 2.5 0.001\nGE 0\n{card}\n\
                       FR 0 1 0 0 29.9 0\nEN\n";
+const SOURCE_SWEEP: &str = "CM probe\nCE\nGW 1 11 0 0 -2.5 0 0 2.5 0.001\nGE 0\n{card}\n\
+                            FR 0 2 0 0 29.9 1\nEN\n";
 const TILTED_SOURCE: &str = "CM probe\nCE\nGW 1 11 0 0 -2.5 1 0 2.4 0.001\nGE 0\n{card}\n\
                              FR 0 1 0 0 29.9 0\nEN\n";
 const LOADED_PATTERN: &str = "CM probe\nCE\nGW 1 11 0 0 -2.5 0 0 2.5 0.001\nGE 0\n\
@@ -162,10 +159,10 @@ const GN_FINITE_I34: &str = "NEC-2 never reads GN I3/I4";
 const GN_FINITE_F36: &str = "GN F3–F6 (a second medium or a cliff, NEC-2's GD parameters) \
                              only enter RP modes 2, 3, 5 and 6, which fnec refuses";
 const GN_IDEAL: &str = "I2–F6 are ignored, as nec2c ignores them";
-const EX_PRINT: &str = "FND-309: a voltage source's I4 units digit asks nec2c for the input \
-                        impedance normalized to F3 (its INPUT IMPEDANCE DATA table); fnec keeps \
-                        the value and drops the request without the warning PT I1 = 1..3 and \
-                        RP's N digit give";
+const EX_PRINT_ONE_FREQUENCY: &str = "I4's units digit asks for the input-impedance table \
+                                      (INPUT_IMPEDANCE), which nec2c prints only for a sweep of \
+                                      two or more frequencies (main.c: nfrq == 1, no table); \
+                                      this deck solves one";
 const EX_I4_TENS: &str = "I4's tens digit, NEC-2's admittance-matrix asymmetry print, which nec2c \
                           1.3.1 ignores too";
 const EX_SOURCE_F3: &str = "a voltage source's F3 is nec2c's impedance-normalization constant, \
@@ -517,10 +514,36 @@ pub const FIELD_DISPOSITION: &[FieldCase] = &[
             &[p("4", C)],
             &[p("2", C)],
             &[p("4", C)],
-            &[p("1", KnownGap(EX_PRINT)), p("10", kept(EX_I4_TENS))],
+            &[
+                p("1", kept(EX_PRINT_ONE_FREQUENCY)),
+                p("10", kept(EX_I4_TENS)),
+            ],
             &[p("2", C)],
             &[p("1", C)],
             &[p("50", kept(EX_SOURCE_F3))],
+            &[p("5", kept(EX_SOURCE_F46))],
+            &[p("5", kept(EX_SOURCE_F46))],
+            &[p("0.5", kept(EX_SOURCE_F46))],
+            UNUSED,
+            UNUSED,
+        ],
+    },
+    FieldCase {
+        card: "EX",
+        case: "I1 = 0, I4 = 1, two frequencies (input-impedance print)",
+        deck: SOURCE_SWEEP,
+        line: "EX 0 1 6 1 1 0 50 0 0 0",
+        fnec_args: &[],
+        fields: [
+            &[p("4", C)],
+            &[p("2", C)],
+            &[p("4", C)],
+            // 0 drops INPUT_IMPEDANCE; 2-9 are not NEC-2's (FND-309).
+            &[p("0", C), p("11", kept(EX_I4_TENS)), p("2", Refused)],
+            &[p("2", C)],
+            &[p("1", C)],
+            // 0 normalizes to the largest |Z|; a negative F3 is not NEC-2's.
+            &[p("100", C), p("0", C), p("-50", Refused)],
             &[p("5", kept(EX_SOURCE_F46))],
             &[p("5", kept(EX_SOURCE_F46))],
             &[p("0.5", kept(EX_SOURCE_F46))],

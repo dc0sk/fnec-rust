@@ -112,6 +112,17 @@ pub(crate) fn check_admissible(deck: &NecDeck, options: &RunOptions) -> Result<(
             _ => {}
         }
     }
+    // FND-309: NEC-2 prints its INPUT IMPEDANCE DATA table when EX I4's units
+    // digit asks for it and the FR card sweeps two or more frequencies.
+    let sweeps = deck
+        .cards
+        .iter()
+        .any(|c| matches!(c, Card::Fr(fr) if fr.steps > 1));
+    if sweeps && nec_solver::input_impedance_print(deck).is_some() {
+        return refuse(
+            "an input-impedance table over the sweep (EX I4 units digit 1, FR I2 > 1)".to_string(),
+        );
+    }
     // One execution, as fnec solves: one FR, then exactly one card that executes
     // (RP, NE or XQ), and nothing after it but EN.
     let cards = &deck.program_cards;

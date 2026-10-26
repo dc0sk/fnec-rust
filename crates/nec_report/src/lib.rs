@@ -17,6 +17,12 @@ use num_complex::Complex64;
 
 pub mod fortran;
 pub mod nec2d;
+pub mod sweep;
+
+pub use sweep::{
+    render_sweep_sections, InputImpedanceNorm, InputImpedanceRequest, SweepFeed, SweepPoint,
+    SweepSections,
+};
 
 /// One row in the segment current distribution table.
 #[derive(Debug, Clone, Copy, PartialEq)]

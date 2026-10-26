@@ -71,6 +71,23 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   its note now counts the record's feedpoints instead of re-parsing the deck for
   `EX` cards, and reads "the deck has N feedpoints".
 
+- **`INPUT_IMPEDANCE`: `EX` I4's input-impedance print** (FND-309). A voltage
+  source's I4 units digit 1 asks NEC-2 for its INPUT IMPEDANCE DATA table, which
+  fnec parsed, echoed in `SOURCES` and dropped. The text report now prints it
+  once after `SWEEP_POINTS`, as nec2c 1.3.1 reads the request: the last
+  voltage-source card decides, F3 > 0 is the factor and F3 = 0 the sweep's
+  largest |Z|, the source is the last `EX 5` or else the last `EX 0` (named
+  `SOURCE_TAG`/`SOURCE_SEG`/`SOURCE_SEGMENT`), the phase is not normalized, and
+  there is no table for a single solved frequency or over a sweep with a failed
+  point. On `EX 0 1 6 11 1 0 50`, `FR 0 2 0 0 29.9 1` (a 5 m dipole): nec2c 78.614 +
+  j40.951 Ω → 1.5723 + j0.81903, fnec within 0.6 % of |Z|. The report's
+  `FORMAT_VERSION` stays 1: the section is additive. `--output-format json`
+  warns that it has no JSON form yet, `--output-format nec2d` refuses the deck,
+  `fnec converge` notes the request as dropped, and the GUI and `fnec_py` do not
+  carry it. The local and distributed runs now print `SWEEP_POINTS` (unchanged,
+  to the byte) and the new section through one renderer,
+  `nec_report::render_sweep_sections`, where they had two copies.
+
 - **`--hallen-residual-caveat <value>` and `FNEC_HALLEN_REL_RESIDUAL_CAVEAT`**
   set the FND-302 caveat's threshold (default 1e-5), on the pattern of
   `--sin-fallback-rel-max`: the flag over the variable, an invalid value
@@ -80,6 +97,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **`EX` I4 units digits 2–9, and units 1 with a negative F3, are refused** on a
+  voltage source (types 0 and 5; FND-309). NEC-2 defines 0 and 1. nec2c reads 2
+  as a fixed factor even when F3 = 0 (printing `INF`) and 3–9, or a negative F3,
+  as the sweep's largest |Z| whatever F3 says. A plane wave's I4 is not read and
+  still parses. The field-disposition guard's `KnownGap` escape hatch, whose one
+  entry this was, is removed.
 - **A residual the route did not compute reads `n/a`, not `0`** (FND-306, D8).
   The section graph, a PEC-contact image, a plane wave, a current source and
   `--solver mpie` compute no residual and printed `abs_res=0.000000e0

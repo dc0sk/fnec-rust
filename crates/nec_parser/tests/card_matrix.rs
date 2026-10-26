@@ -117,11 +117,10 @@ fn typed_cards() -> Vec<&'static str> {
         .collect()
 }
 
-/// What a check found: failures, and the tolerated `KnownGap` entries that failed.
+/// What a check found.
 #[derive(Default, Debug)]
 struct Findings {
     failures: Vec<String>,
-    gaps: Vec<String>,
 }
 
 /// The card an error names, if it names one.
@@ -197,7 +196,7 @@ fn check_fields(rows: &[FieldCase], parse: Parser) -> Findings {
                         Some("parsed; the table says it is refused".to_string())
                     }
                     (_, Err(e)) => Some(format!("refused: {e}")),
-                    (Disposition::Consumed | Disposition::KnownGap(_), Ok(r)) => (!cards_differ(r))
+                    (Disposition::Consumed, Ok(r)) => (!cards_differ(r))
                         .then(|| "the typed cards are unchanged: the parser drops it".to_string()),
                     (Disposition::Ignored(why), Ok(r)) => {
                         if cards_differ(r) {
@@ -245,12 +244,7 @@ fn check_fields(rows: &[FieldCase], parse: Parser) -> Findings {
                     }
                 };
                 if let Some(problem) = problem {
-                    let msg = format!("{here}: {problem}\n    {line}");
-                    if matches!(disposition, Disposition::KnownGap(_)) {
-                        out.gaps.push(msg);
-                    } else {
-                        out.failures.push(msg);
-                    }
+                    out.failures.push(format!("{here}: {problem}\n    {line}"));
                 }
             }
         }
@@ -345,9 +339,6 @@ fn check_doc(rows: &[FieldCase], doc: &str) -> Vec<String> {
 }
 
 fn report(f: &Findings) {
-    for g in &f.gaps {
-        eprintln!("KNOWN GAP (tolerated, listed until decided): {g}");
-    }
     assert!(
         f.failures.is_empty(),
         "{} failure(s):\n{}",
