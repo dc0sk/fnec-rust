@@ -372,6 +372,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   stderr lacked passed on a refusal — two `TL` tests ran fnec's retired layout —
   and now show the deck solved. A GPU test skips only on a genuinely absent
   adapter: a failed device request or readback on a found one is a failure.
+- **Findings-ledger rows cite commits that exist on `main`** (FND-317). 26
+  rows cited branch commits as "Fixed in <hash>"; the PRs were squash-merged, so
+  the hashes were on no branch and absent from a fresh clone. They now name the
+  PR. `scripts/check-findings-ledger.py` fails on a cited commit that is not an
+  ancestor of HEAD unless `(#N)` follows it, and refuses a shallow clone rather
+  than pass it; its self-test, `scripts/test-check-findings-ledger.py`, runs in
+  `check-all.sh` and CI.
 
 ## [0.25.0] — 2026-10-22 — Where wires meet
 
