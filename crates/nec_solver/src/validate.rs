@@ -2346,8 +2346,8 @@ pub fn overridden_source_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<Strin
                 "EX: tag {} segment {} carries {type0} voltage-source cards of type 0 \
                  (`{}` {}, then `{}` {}). NEC-2 applies only the last, so the {} card \
                  drives nothing and has no FEEDPOINTS row; the segment is solved at {}. \
-                 Delete the earlier card, or put the sum on one card if a {} drive was \
-                 meant (FND-305)",
+                 Delete the earlier card, or put the sum on one card if a {} type-0 drive \
+                 was meant (FND-305)",
                 seg.tag,
                 seg.tag_index,
                 ex_card_text(lost),

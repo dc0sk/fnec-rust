@@ -88,6 +88,9 @@ pub enum MpieSessionError {
     /// The feed is on a segment at a free wire end, where the MPIE has no basis
     /// to drive (FND-228).
     EndSegmentFeed { tag: u32, segment: u32 },
+    /// An `EX` card the excitation builder refuses (an unrecognised type), with
+    /// that builder's own message.
+    Excitation(String),
     /// The numerics failed.
     Solve(MpieError),
     /// The solve returned, but not with numbers (FND-126).
@@ -118,6 +121,7 @@ impl std::fmt::Display for MpieSessionError {
                  which the MPIE's basis cannot drive (its answer there is 20-37 % from NEC's, \
                  FND-228); feed a segment one in from the end"
             ),
+            Self::Excitation(e) => write!(f, "{e}"),
             Self::Solve(e) => write!(f, "{e}"),
             Self::NonFiniteCurrents(e) => write!(f, "{e}"),
             Self::Load(e) => write!(f, "{e}"),
@@ -280,10 +284,12 @@ pub(crate) fn mpie_plan(
         crate::excitation::ExcitationError::SegmentNotFound { tag, segment } => {
             MpieSessionError::DrivenSegmentNotFound { tag, segment }
         }
-        // An unrecognised `EX` type drives nothing the MPIE could; every frontend
-        // refuses it before a solve.
-        crate::excitation::ExcitationError::UnsupportedType { .. } => {
-            MpieSessionError::NoVoltageSource
+        // An unrecognised `EX` type: refused with the excitation builder's own
+        // sentence, as the Hallén route does. Every frontend refuses it first
+        // (`build_excitation`), but `NoVoltageSource` here would name a fault the
+        // deck does not have — it HAS a voltage source (FND-305 review).
+        e @ crate::excitation::ExcitationError::UnsupportedType { .. } => {
+            MpieSessionError::Excitation(e.to_string())
         }
     })?;
     for (driven_idx, volts) in driven.sources() {
@@ -429,8 +435,10 @@ mod tests {
         let segs = crate::build_geometry(&deck).expect("geometry builds");
         let err = solve_mpie_session(&deck, &segs, &GroundModel::FreeSpace, 14.2e6, &[])
             .expect_err("an unrecognised EX type must not silently drive the MPIE");
+        // Refused with the excitation builder's own sentence, naming the card
+        // (FND-305 review): `NoVoltageSource` said only that none was found.
         assert!(
-            matches!(err, MpieSessionError::NoVoltageSource),
+            matches!(&err, MpieSessionError::Excitation(m) if m.contains("I1=9")),
             "unexpected error: {err}"
         );
     }

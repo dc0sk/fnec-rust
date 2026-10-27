@@ -20,6 +20,7 @@
 //!   j45.856. Its INPUT POWER (3.5498e-3 W) sums one row per card, and its gain
 //!   (−2.61 dBi with `t_half`'s E-field exactly) inherits that: **not a
 //!   reference**. fnec is gated on the one-card twin instead.
+//! - `t_sum` (one EX 0 at 1.5 V): |I| = 1.6416e-2 A.
 //! - `t_ex0_ex5` (EX 0 1 V + EX 5 0.5 V): |I| = 1.6133e-2 A — superposed.
 //!
 //! The bands are inherited, not tuned: Z within the corpus's external gate
@@ -27,6 +28,15 @@
 //! 1.4 % from nec2c's), the EX 5 cases within 10 % (fnec solves EX 5 as EX 0, a
 //! documented ~6 % non-goal, PH8-CHK-003). The discriminator between the
 //! semantics is a factor 3 (summing) or 2 (first-wins).
+//!
+//! The 10 % is not fnec's accuracy on EX 5 decks. fnec's `EX0_EX5` current is
+//! its `SUM` current to the digit (1.6641e-2 A), +1.37 % from nec2c `t_sum` —
+//! the one-card offset (`t_half` 5.4722e-3 against fnec's 5.547e-3, +1.37 %),
+//! gated at 3 % in T1 and again in T5. nec2c's own `t_ex0_ex5` is 1.7 % below its
+//! own `t_sum` at the same total drive, because its EX 5 is a current-slope source
+//! numerically different from its EX 0: 3.15 % = 1.37 % + 1.7 %, nothing residual,
+//! no offset aligned out. The alternatives the band rejects are 5.5e-3 (EX 5
+//! overrides, −66 %) and 1.09e-2 (EX 5 ignored, −32 %).
 //!
 //! Every absence (no second row, no warning) is paired with a success check.
 
@@ -54,6 +64,8 @@ const NEC2C_HALF_P_IN: f64 = 1.1833e-3;
 const NEC2C_HALF_GAIN_DBI: f64 = 2.16;
 /// nec2c `t_ex0_ex5`: |1.3944e-2 − j8.1147e-3|.
 const NEC2C_EX0_EX5_I_MAG: f64 = 1.6133e-2;
+/// nec2c `t_sum`: |1.4199e-2 − j8.2385e-3|, one EX 0 at 1.5 V.
+const NEC2C_SUM_I_MAG: f64 = 1.6416e-2;
 
 /// The override warning's stable words (`validate::overridden_source_warnings`).
 const APPLIES_ONLY_THE_LAST: &str = "NEC-2 applies only the last";
@@ -259,6 +271,11 @@ fn power_and_gain_follow_the_applied_drive_not_the_cards() {
 
 /// T5: a type-5 card adds to the type-0 drive (nec2c's `qdsrc`). The CURRENTS
 /// equality with `SUM` is fnec-consistency only — fnec solves EX 5 as EX 0.
+///
+/// Two absolute anchors, split as the header explains: within 3 % of nec2c
+/// `t_sum` (1.6416e-2; fnec's EX 5 is EX 0, so the same band as T1), and within
+/// 10 % of nec2c `t_ex0_ex5` (1.6133e-2), whose extra 1.7 % below `t_sum` is
+/// nec2c's own EX 5 numerics (the documented non-goal), not fnec's error.
 #[test]
 fn a_type5_card_adds_to_the_type0_drive() {
     let out = run("ex0_ex5", EX0_EX5, "", &[]);
@@ -269,6 +286,12 @@ fn a_type5_card_adds_to_the_type0_drive() {
     assert!(
         rel(i_mag(&rows[0]), NEC2C_EX0_EX5_I_MAG) < 0.10,
         "|I| {} against nec2c {NEC2C_EX0_EX5_I_MAG}",
+        i_mag(&rows[0])
+    );
+    assert!(
+        rel(i_mag(&rows[0]), NEC2C_SUM_I_MAG) < 0.03,
+        "fnec's EX 5 is EX 0 — the same 3 % band as T1: |I| {} against nec2c t_sum \
+         {NEC2C_SUM_I_MAG}",
         i_mag(&rows[0])
     );
     assert_eq!(

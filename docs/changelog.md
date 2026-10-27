@@ -102,7 +102,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   field) and adds every type-5 card's. On a 21-segment dipole fed `EX 0 1 11 0 1 0`
   then `EX 0 1 11 0 0.5 0` at 14.2 MHz fnec solved a 1.5 V drive; it now drives
   0.5 V and its CURRENTS block is the 0.5 V deck's to every digit, as nec2c's is
-  (|I| 5.47e-3 A against nec2c's 5.4722e-3). The impedance was the same either way
+  (|I| 5.547e-3 A against nec2c's 5.4722e-3, 1.4 %). The impedance was the same either way
   (78.955 + j43.484 Ω), which is why the finding hid. FEEDPOINTS, the JSON
   `feedpoints` array and the bindings' rows have one row per driven segment, and
   each overridden card earns a warning naming itself and the drive applied;

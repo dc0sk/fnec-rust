@@ -449,6 +449,9 @@ pub fn feedpoint_input_power(
     // its gain on such a deck is not a reference: 3.55 mW and −2.61 dBi where the
     // deck with the overridden card deleted, whose E-field is identical, prints
     // 1.18 mW and 2.16 dBi.
+    // Unreachable with an error: every caller has solved the deck, which resolved
+    // these same cards first. A 0 W return makes `gain_correction_db` decline
+    // (no correction), never divide by it.
     let Ok(driven) = crate::excitation::driven_segments(deck, segs) else {
         return 0.0;
     };
