@@ -420,9 +420,34 @@ fn json_table(rec: &serde_json::Value) -> Option<JsonTable> {
     ))
 }
 
-/// `a == b` to the few ulp serde_json's float parser can lose.
-fn exact(a: f64, b: f64) -> bool {
-    (a - b).abs() <= 4.0 * f64::EPSILON * a.abs().max(b.abs())
+/// Every value of `"key":` in the JSON text, in order, parsed by `str::parse`.
+/// serde_json's default float parser is not correctly rounded (it is one ulp
+/// off on these records), Rust's is, so an exact assertion reads the token.
+fn exact_numbers(out: &str, key: &str) -> Vec<f64> {
+    let pat = format!("\"{key}\":");
+    out.match_indices(&pat)
+        .map(|(i, _)| {
+            let tail = &out[i + pat.len()..];
+            let end = tail.find([',', '}', ']']).expect("a number ends");
+            tail[..end].parse().expect("a number")
+        })
+        .collect()
+}
+
+/// The chosen feedpoint's exact Z per record, and each record's exact `zn_*`.
+/// A record writes `z_re` at its top level and then once per feedpoint, so with
+/// `n_feeds` feedpoints the chosen one's is occurrence `1 + feed` of each
+/// `1 + n_feeds`.
+fn exact_zn(out: &str, n_feeds: usize, feed: usize) -> Vec<((f64, f64), (f64, f64))> {
+    let (re, im) = (exact_numbers(out, "z_re"), exact_numbers(out, "z_im"));
+    let (zn_re, zn_im) = (exact_numbers(out, "zn_re"), exact_numbers(out, "zn_im"));
+    assert_eq!(re.len(), zn_re.len() * (1 + n_feeds), "{out}");
+    (0..zn_re.len())
+        .map(|r| {
+            let k = r * (1 + n_feeds) + 1 + feed;
+            ((re[k], im[k]), (zn_re[r], zn_im[r]))
+        })
+        .collect()
 }
 
 /// A record's `feedpoints[i]` Z.
@@ -434,8 +459,7 @@ fn json_z(rec: &serde_json::Value, i: usize) -> (f64, f64) {
 /// FND-314: JSON carries the table as each record's `input_impedance`, from the
 /// decision the text section takes. Its normalized Z is the record's chosen
 /// feedpoint over the factor exactly: the division is componentwise and `{}`
-/// round-trips an f64, but serde_json's default float parser is not correctly
-/// rounded, so read back here it agrees to a few ulp ([`exact`]). The comparison with the text table from the same
+/// round-trips an f64, read back by `str::parse` ([`exact_zn`]). The comparison with the text table from the same
 /// binary is the wiring check — one function renders both, so it is not a
 /// numeric gate; the nec2c anchor is the next test. The same deck with units
 /// digit 0 carries no field (the control), and a single point carries none and
@@ -445,6 +469,9 @@ fn json_records_carry_the_table() {
     let body = format!("{DIPOLE}EX 0 1 6 11 1 0 50\nFR 0 2 0 0 29.9 1\n");
     let o = fnec("json", &body, &["--output-format", "json"]);
     assert!(!stderr(&o).contains("input-impedance"), "{}", stderr(&o));
+    for ((re, im), zn) in exact_zn(&stdout(&o), 1, 0) {
+        assert_eq!(zn, (re / 50.0, im / 50.0));
+    }
     let recs = json(&o);
     assert_eq!(recs.len(), 2);
     let text = table(&solved(&fnec("json_text", &body, &[]))).expect("the text table");
@@ -452,7 +479,6 @@ fn json_records_carry_the_table() {
         let (idx, src, factor, to, zn_re, zn_im, zn_abs) = json_table(rec).expect("the field");
         assert_eq!((idx, src, factor, to.as_str()), (0, (1, 6, 6), 50.0, "F3"));
         let (re, im) = json_z(rec, 0);
-        assert!(exact(zn_re, re / 50.0) && exact(zn_im, im / 50.0), "{rec}");
         assert!((zn_abs - re.hypot(im) / 50.0).abs() <= 4.0 * f64::EPSILON * zn_abs);
         // The text table's columns, to the seven digits it prints.
         for (j, v) in [(5, zn_re), (6, zn_im), (7, zn_abs)] {
@@ -528,16 +554,20 @@ fn a_json_largest_magnitude_table_matches_nec2c() {
 fn the_json_table_names_the_row_it_follows() {
     let body = format!("{TWO_WIRES}EX 0 1 41 0 1 0 0\nEX 0 2 41 1 1 0 50\nFR 0 2 0 0 29.9 1\n");
     candidates_differ(&feedpoints(&solved(&fnec("json_row_text", &body, &[]))));
-    let recs = json(&fnec("json_row", &body, &["--output-format", "json"]));
+    let o = fnec("json_row", &body, &["--output-format", "json"]);
+    let recs = json(&o);
     assert_eq!(recs.len(), 2);
     for rec in &recs {
-        let (idx, src, factor, to, zn_re, zn_im, _) = json_table(rec).expect("the field");
+        let (idx, src, factor, to, ..) = json_table(rec).expect("the field");
         assert_eq!(
             (idx, src, factor, to.as_str()),
             (1, (2, 41, 122), 50.0, "F3")
         );
-        let (re, im) = json_z(rec, 1);
-        assert!(exact(zn_re, re / 50.0) && exact(zn_im, im / 50.0), "{rec}");
+    }
+    let rows = exact_zn(&stdout(&o), 2, 1);
+    assert_eq!(rows.len(), 2);
+    for ((re, im), zn) in rows {
+        assert_eq!(zn, (re / 50.0, im / 50.0));
     }
 }
 

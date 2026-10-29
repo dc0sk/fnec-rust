@@ -1965,7 +1965,7 @@ mod tests {
         assert!(warnings.is_empty(), "{warnings:?}");
         let recs: Vec<serde_json::Value> = serde_json::from_str(&doc).expect("JSON");
         assert_eq!(recs.len(), 2);
-        for (rec, z) in recs.iter().zip([(70.5, -3.25), (80.0, 20.0)]) {
+        for rec in &recs {
             let t = &rec["input_impedance"];
             assert_eq!(
                 (
@@ -1978,15 +1978,22 @@ mod tests {
                 (Some(0), Some(2), Some(11), Some(32), Some("F3")),
                 "{rec}"
             );
-            // serde_json's default float parser is not correctly rounded (one
-            // ulp), so equality is to a few ulp, not bits.
-            let (re, im) = (t["zn_re"].as_f64().unwrap(), t["zn_im"].as_f64().unwrap());
-            assert!(
-                (re - z.0 / 50.0).abs() <= 4.0 * f64::EPSILON * re.abs()
-                    && (im - z.1 / 50.0).abs() <= 4.0 * f64::EPSILON * im.abs(),
-                "{rec}"
-            );
         }
+        // Exactly the record's Z over F3, read back by `str::parse`: serde_json's
+        // default float parser is not correctly rounded.
+        let exact = |key: &str| -> Vec<f64> {
+            let pat = format!("\"{key}\":");
+            doc.match_indices(&pat)
+                .map(|(i, _)| {
+                    let tail = &doc[i + pat.len()..];
+                    tail[..tail.find([',', '}']).expect("a number ends")]
+                        .parse()
+                        .expect("a number")
+                })
+                .collect()
+        };
+        assert_eq!(exact("zn_re"), vec![70.5 / 50.0, 80.0 / 50.0]);
+        assert_eq!(exact("zn_im"), vec![-3.25 / 50.0, 20.0 / 50.0]);
         // One failed point: no table on either record, and the warning.
         let (doc, warnings) = json_document(&deck, &rows[..1], &[1], &[29.9e6, 30.9e6]);
         assert!(!doc.contains("input_impedance"), "{doc}");
