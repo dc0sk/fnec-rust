@@ -88,6 +88,9 @@ pub enum MpieSessionError {
     /// The feed is on a segment at a free wire end, where the MPIE has no basis
     /// to drive (FND-228).
     EndSegmentFeed { tag: u32, segment: u32 },
+    /// An `EX` card the excitation builder refuses (an unrecognised type), with
+    /// that builder's own message.
+    Excitation(String),
     /// The numerics failed.
     Solve(MpieError),
     /// The solve returned, but not with numbers (FND-126).
@@ -118,6 +121,7 @@ impl std::fmt::Display for MpieSessionError {
                  which the MPIE's basis cannot drive (its answer there is 20-37 % from NEC's, \
                  FND-228); feed a segment one in from the end"
             ),
+            Self::Excitation(e) => write!(f, "{e}"),
             Self::Solve(e) => write!(f, "{e}"),
             Self::NonFiniteCurrents(e) => write!(f, "{e}"),
             Self::Load(e) => write!(f, "{e}"),
@@ -274,16 +278,24 @@ pub(crate) fn mpie_plan(
     // wire graph, and a wire touching it was refused just above.
     let at_end = crate::geometry::at_free_end(segs, false);
     let mut feeds: Vec<(usize, Complex64)> = Vec::new();
-    for (ex, role) in crate::excitation::feedpoints(deck) {
-        if role != nec_model::card::FeedpointRole::DeltaGap {
-            continue;
+    // One feed per driven segment, with the drive NEC-2 gives it (FND-305): two
+    // type-0 cards on one segment are the last card, not their sum.
+    let driven = crate::excitation::driven_segments(deck, segs).map_err(|e| match e {
+        crate::excitation::ExcitationError::SegmentNotFound { tag, segment } => {
+            MpieSessionError::DrivenSegmentNotFound { tag, segment }
         }
-        let driven_idx = crate::find_deck_segment(segs, ex.tag, ex.segment).ok_or(
-            MpieSessionError::DrivenSegmentNotFound {
-                tag: ex.tag,
-                segment: ex.segment,
-            },
-        )?;
+        // An unrecognised `EX` type: refused with the excitation builder's own
+        // sentence, as the Hallén route does. Every frontend refuses it first
+        // (`build_excitation`), but `NoVoltageSource` here would name a fault the
+        // deck does not have — it HAS a voltage source (FND-305 review).
+        e @ crate::excitation::ExcitationError::UnsupportedType { .. } => {
+            MpieSessionError::Excitation(e.to_string())
+        }
+    })?;
+    for (driven_idx, volts) in driven.sources() {
+        // Named as the segment it resolved to: a tag-0 card names an absolute
+        // segment (FND-282), and several cards may name this one.
+        let (seg_tag, seg_index) = (segs[driven_idx].tag, segs[driven_idx].tag_index);
         // NEC's `EX 0` is a uniform field V/Δ over the driven segment. Projected on
         // the two triangle bases touching it, that is V·f(½) = V/2 at each end node,
         // with each basis's own reference sign — the transpose of the midpoint
@@ -298,11 +310,10 @@ pub(crate) fn mpie_plan(
         // the answer stays 20–37 % from nec2c however fine the mesh (FND-228).
         if at_end[driven_idx] {
             return Err(MpieSessionError::EndSegmentFeed {
-                tag: ex.tag,
-                segment: ex.segment,
+                tag: seg_tag,
+                segment: seg_index,
             });
         }
-        let volts = Complex64::new(ex.voltage_real, ex.voltage_imag);
         if let (Some(sa), Some(sb)) = (
             feed_reference_sign(&geom, a, driven_idx),
             feed_reference_sign(&geom, b, driven_idx),
@@ -325,10 +336,7 @@ pub(crate) fn mpie_plan(
         // the feedpoint `V/I` — comes out negated (an unphysical negative
         // resistance for a deck that is only written differently).
         let feed_sign = feed_reference_sign(&geom, feed_node, driven_idx).unwrap_or(1.0);
-        feeds.push((
-            feed_node,
-            Complex64::new(ex.voltage_real, ex.voltage_imag) * feed_sign,
-        ));
+        feeds.push((feed_node, volts * feed_sign));
     }
     if feeds.is_empty() {
         return Err(MpieSessionError::NoVoltageSource);
@@ -427,8 +435,10 @@ mod tests {
         let segs = crate::build_geometry(&deck).expect("geometry builds");
         let err = solve_mpie_session(&deck, &segs, &GroundModel::FreeSpace, 14.2e6, &[])
             .expect_err("an unrecognised EX type must not silently drive the MPIE");
+        // Refused with the excitation builder's own sentence, naming the card
+        // (FND-305 review): `NoVoltageSource` said only that none was found.
         assert!(
-            matches!(err, MpieSessionError::NoVoltageSource),
+            matches!(&err, MpieSessionError::Excitation(m) if m.contains("I1=9")),
             "unexpected error: {err}"
         );
     }

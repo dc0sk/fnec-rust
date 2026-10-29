@@ -172,6 +172,7 @@ run "corpus provenance self-test" python3 scripts/test-derive-corpus-provenance.
 run "check-asset-platform self-test" python3 scripts/test-check-asset-platform.py
 run "unreleased-empty self-test" python3 scripts/test-check-changelog-unreleased-empty.py
 run "physical-constants self-test" python3 scripts/test-check-physical-constants.py
+run "findings-ledger self-test" python3 scripts/test-check-findings-ledger.py
 
 # Against the merge base, so it sees the doc-regression half — a doc comment can
 # only come adrift from an item *relative to* where that item was documented.

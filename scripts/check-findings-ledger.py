@@ -10,11 +10,23 @@ Deliberately shape-only. Whether a `fixed` row is *really* fixed is a question f
 the change it cites, not for a grep; claiming to verify that here would be the kind
 of check that passes forever without ever having looked.
 
+One rule does reach into git, because it is a fact a grep can settle: a commit
+the ledger cites must be reachable from HEAD. The PRs here are squash-merged, so
+a branch commit's hash does not exist on `main` once the PR lands -- 16 rows
+cited such hashes as "Fixed in <hash> (this PR)", resolvable only as dangling
+objects in the clone that made them (FND-317). A cited hash must therefore be an
+ancestor of HEAD, or carry its PR number right after it: `<hash> (#N)` or
+`<hash> (PR #N, ...)`. HEAD rather than `main`, so a branch's own new commits
+pass before it merges, and CI's PR merge commit has `main` as an ancestor.
+
 Usage:
-  scripts/check-findings-ledger.py          # exit 1 on any malformed row
+  scripts/check-findings-ledger.py          # exit 1 on any malformed row,
+                                            # exit 2 if git history is unavailable
+  scripts/check-findings-ledger.py --ledger PATH
 """
 
 import re
+import subprocess
 import sys
 
 LEDGER = "docs/project/findings-ledger.md"
@@ -22,8 +34,70 @@ TERMINAL = {"fixed", "deferred", "rejected"}
 STATES = TERMINAL | {"open"}
 ROW = re.compile(r"^\|\s*(FND-\d+)\s*\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|\s*$")
 
+# A hex token the ledger cites AS A COMMIT, by the phrasings the rows actually
+# use: "fixed in <h>", "squashed to <h>", "main <h>" / "main at <h>", "minted at
+# <h>", "commit <h>", "on `<h>`", "at `<h>`", and "(<h>" / "(`<h>`". Matching
+# every 7-hex token instead would take in "SSH ed25519", allocation sizes
+# ("of 2147483648 bytes") and float mantissas ("8.854187817e-12"); matching only
+# hashes with a letter would miss "fixed in 2503790". A prose mention that is
+# not a citation ("NONE of 720bf3e, b40c192 ...", FND-134) is not matched.
+CITE = re.compile(
+    r"(?:(?i:\b(?:in|to|at|main|commit|on))\s+|\()`?([0-9a-f]{7,40})(?![0-9A-Za-z_])"
+)
+# The citation carries its PR number when one follows it at once.
+CARRIES_PR = re.compile(r"`?\s*\((?:PR\s*)?#\d+")
+
+
+def git(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], capture_output=True, text=True)
+
+
+def history_problem() -> str | None:
+    """Why the ancestry rule cannot be decided here, or None if it can."""
+    try:
+        r = git("rev-parse", "--is-shallow-repository")
+    except OSError as e:
+        return f"cannot run git: {e}"
+    if r.returncode != 0:
+        return f"not a git checkout: {r.stderr.strip()}"
+    if r.stdout.strip() == "true":
+        # A shallow clone cannot tell "not an ancestor" from "not fetched", so
+        # every old citation would fail. Refuse rather than skip: CI's docs job
+        # checks out with fetch-depth: 0, so this never fires there, and a skip
+        # would be a green that looked at nothing.
+        return "shallow clone: run `git fetch --unshallow` (CI: fetch-depth: 0)"
+    return None
+
+
+def dangling_citations(lineno: int, fid: str, line: str) -> list[str]:
+    out = []
+    for m in CITE.finditer(line):
+        h = m.group(1)
+        if CARRIES_PR.match(line, m.end()):
+            continue
+        is_commit = git("cat-file", "-e", f"{h}^{{commit}}").returncode == 0
+        if is_commit and git("merge-base", "--is-ancestor", h, "HEAD").returncode == 0:
+            continue
+        why = "not an ancestor of HEAD" if is_commit else "no such commit"
+        out.append(
+            f"{LEDGER}:{lineno}: {fid} cites commit {h} ({why}); cite the PR as "
+            f"#N, or a commit on main followed by (#N)"
+        )
+    return out
+
 
 def main() -> int:
+    global LEDGER
+    args = sys.argv[1:]
+    if args[:1] == ["--ledger"] and len(args) == 2:
+        LEDGER = args[1]
+    elif args:
+        print(f"usage: {sys.argv[0]} [--ledger PATH]", file=sys.stderr)
+        return 2
+    hist = history_problem()
+    if hist:
+        print(f"check-findings-ledger: {hist}", file=sys.stderr)
+        return 2
     try:
         lines = open(LEDGER, encoding="utf-8").read().splitlines()
     except OSError as e:
@@ -57,6 +131,7 @@ def main() -> int:
             problems.append(f"{LEDGER}:{lineno}: {fid} reused (first seen line {seen[fid]})")
         seen[fid] = lineno
         order.append(int(fid.split("-")[1]))
+        problems.extend(dangling_citations(lineno, fid, line))
 
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", found):
             problems.append(f"{LEDGER}:{lineno}: {fid} 'Found' must be an ISO date, got {found!r}")

@@ -179,9 +179,9 @@ this.
 
 | # | Path | Covered | Evidence |
 |:--|:-----|:--------|:---------|
-| 1 | `build_hallen_rhs` (delta-gap RHS) | yes | `match … feedpoint_role()`, no wildcard; `unknown_ex_type_is_error` |
-| 2 | `build_hallen_rhs_paths` (second loop) | yes | same match; same error channel |
-| 3 | `apply_ex` (EFIE voltage vector) | yes | same match |
+| 1 | `build_hallen_rhs` (delta-gap RHS) | yes | through `driven_segments` (C8), whose `match` on `ExcitationKind` has no wildcard; `unknown_ex_type_is_error` |
+| 2 | `build_hallen_rhs_paths` | yes | through `driven_segments`; same error channel |
+| 3 | `build_excitation` (EFIE voltage vector) | yes | through `driven_segments` |
 | 4 | Remote worker | yes | `a_type_5_voltage_source_is_a_feedpoint_here_as_it_is_everywhere_else` |
 | 5 | CLI feedpoint rows | yes | `feedpoints`, keyed on the role; `dipole-ex4-freesp-51seg` corpus gate |
 | 6 | GUI | yes | `a_plane_wave_is_not_read_as_the_feedpoint` |
@@ -189,14 +189,13 @@ this.
 | 8 | CLI distributed diagnostic | yes | `the_caveat_names_the_same_feedpoint_the_worker_reported` |
 | 9 | `validate::source_risk_geometry_error` | yes | `a_plane_wave_does_not_trigger_a_source_risk_rejection`; end-to-end `a_receive_only_deck_is_not_refused_for_a_source_it_does_not_have` |
 | 10 | `validate::feedpoint_at_junction_warnings` | yes | `an_unrecognised_excitation_is_not_treated_as_a_junction_feedpoint` |
-| 11 | MPIE session feedpoint | yes | `first_delta_gap_feedpoint`, since [FND-037](findings-ledger.md) closed in #414 — the shared `solve_mpie_session` no longer depends on gates in another function |
+| 11 | MPIE session feedpoint | yes | `driven_segments` (C8 row 6), since FND-305; before that `first_delta_gap_feedpoint`, since [FND-037](findings-ledger.md) closed in #414 — the shared `solve_mpie_session` no longer depends on gates in another function |
 
-Rows 1–3 keep their own loops rather than calling the reporting seam, and that is
-the principled half of the split: building an RHS needs an `UnsupportedType` error
-channel that naming a feedpoint does not. What they no longer keep is their own
-*policy* — all three `match` on `ExcitationKind::feedpoint_role()` with no wildcard
-arm, so a new excitation type breaks the build in three places rather than
-defaulting into whichever branch was last.
+Rows 1–3 do not call the reporting seam: building an RHS needs an
+`UnsupportedType` error channel that naming a feedpoint does not. Since FND-305
+they share one owner instead, `driven_segments` (C8), which carries that channel and
+matches on `ExcitationKind` with no wildcard arm, so a new excitation type breaks
+the build in one place rather than defaulting into whichever branch was last.
 
 The reporting seam needs no error channel for `Unknown`: every reporting site sits
 strictly downstream of `build_excitation`/`build_hallen_rhs`, which reject an
@@ -205,6 +204,35 @@ unknown type before any current exists to report.
 Rows 8 and 4 are the same call by construction now. That parity used to be a
 comment asking two files to be kept in step, and they diverged twice inside a
 single review.
+
+---
+
+## C8 — Which drive a segment carries
+
+Two `EX` cards may name one segment. NEC-2 drives it with the last type-0 card plus
+every type-5 card (nec2c assigns a type-0 card's field, `matrix.c:748`, and adds a
+type-5 card's in `qdsrc`); fnec summed every card until FND-305. The answer has one
+owner, `driven_segments` in `crates/nec_solver/src/excitation.rs`; every site below
+reads it, and none counts or iterates cards to decide a drive.
+
+| # | Path | Covered | Evidence |
+|:--|:-----|:--------|:---------|
+| 1 | `build_excitation` (EFIE vector; pulse/continuity read it) | yes | `every_builder_drives_the_segment_with_the_last_type0_card`; `proptest_two_cards_on_one_segment_follow_nec2s_rule` |
+| 2 | `delta_gap_sources` → `build_hallen_rhs` (plain Hallén, sinusoidal) | yes | `an_overridden_card_leaves_the_currents_byte_identical`; `every_route_applies_the_rule` (sinusoidal) |
+| 3 | `build_hallen_rhs_paths` (conductor paths) | yes | `every_route_applies_the_rule` (paths) |
+| 4 | `graph_feeds` (section graph) | yes | `every_route_applies_the_rule` (graph) |
+| 5 | Network `driven` list (`solve_with_networks`, first match) | yes | `a_port_on_a_doubly_fed_segment_is_priced_from_the_drive_applied` (beneath the frontends' refusal, the only place it is reachable: a per-card list leaves every frontend test green) |
+| 6 | MPIE feeds (`solve_mpie_session`) | yes | `every_route_applies_the_rule` (mpie) |
+| 7 | PEC-contact image deck (cards copied in order) | yes | `every_route_applies_the_rule` (image) |
+| 8 | CLI feedpoint rows (`build_feedpoint_rows`, `feedpoint_abs_segments`) | yes | `the_last_type0_card_drives_the_segment_as_nec2c` |
+| 9 | Input power (`feedpoint_input_power`) for gain and POWER BUDGET | yes | `power_and_gain_follow_the_applied_drive_not_the_cards`; GUI `two_ex_cards_on_one_segment_drive_it_with_the_last_on_both_gui_paths` |
+| 10 | Worker, GUI, bindings single-feed pricing (`v_vec` at the first card's segment) | yes | `a_worker_feed_row_is_priced_from_the_drive_the_solve_applied`; bindings `two_ex_cards_on_one_segment_are_one_row_with_a_warning` |
+| 11 | Sommerfeld one-feed test (`correction_applies`) | yes | `a_doubly_fed_single_feed_still_takes_the_sommerfeld_correction` |
+| 12 | `--hosts` multi-feed refusal (`more_than_one_feedpoint`) | yes | `a_doubly_fed_single_feed_is_one_distributed_feedpoint_with_its_warning`; `more_than_one_feedpoint_counts_the_feedpoint_rows` |
+| 13 | FND-309 source lookup (`source_abs_seg`) | yes | `the_input_impedance_print_finds_the_source_by_its_segment` |
+| 14 | Feed caveats (`feedpoint_at_junction_warnings`, `free_end_feed_warnings`, `mpie_low_ground_measured`) | yes | one per driven segment, through the owner |
+| 15 | Override warning (`overridden_source_warnings`) | yes | derived from the owner's `overridden` list; `the_last_type0_card_drives_the_segment_as_nec2c` |
+| 16 | TL/NT port refusal (`network_on_multiply_fed_segment_error`) | yes | `a_network_port_on_a_doubly_fed_segment_is_refused` (CLI, worker, bindings), `a_network_port_on_a_doubly_fed_segment_is_refused_on_both_gui_paths` |
 
 ---
 
