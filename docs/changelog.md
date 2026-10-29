@@ -116,6 +116,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A sweep range whose step is below its resolution is refused** in
+  `--sweep-config` and the GUI's sweep tab (FND-316). Below 8ε·max(|start|, |end|)
+  — 1.8e-12 MHz at 1000 MHz — the count rule's rounding term exceeds half a
+  step, and `1000 … 1000.000000000001 by 1e-13` counted 20 points, with
+  duplicate frequencies, for 11. The new `RangeError::StepBelowResolution`
+  names the step and the resolution. `FR` cards are unchanged: their count is
+  written on the card, and nec2c runs a zero or tiny step as repeated points.
+
 - **The GUI's sweep and the distributed worker check the frequencies they run,
   not the deck's `FR`** (FND-290, FND-210's class). Both asked the deck, whose
   `FR` the sweep range and the wire's `frequency_hz` replace: a deck with
