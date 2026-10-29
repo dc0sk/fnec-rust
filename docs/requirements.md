@@ -199,5 +199,6 @@ The CLI text report format is versioned and contract-bound for compatibility tes
 - Data rows: one source-driven segment per row; exactly 8 whitespace-separated columns
 - Numeric formatting: fixed-point with 6 decimals
 - Ordering: preserve solver/feed discovery order emitted by CLI for deterministic runs
+- A card NEC-2 overrides (an earlier `EX 0` on a segment a later `EX 0` names) has no row; the segment's row carries the drive NEC-2 applies (FND-305)
 
 Contract changes to these tokens, column order, or precision rules require explicit changelog note and test updates.

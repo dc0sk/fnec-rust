@@ -938,17 +938,16 @@ pub(super) fn build_feedpoint_rows(
     let directions: Vec<[f64; 3]> = segs.iter().map(|s| s.direction).collect();
     let lengths: Vec<f64> = segs.iter().map(|s| s.length).collect();
 
-    // Through the shared seam (FND-031), which excludes plane waves — their
-    // tag/segment fields carry NTHETA/NPHI, not a driven segment — while keeping
-    // current sources, which ARE feedpoints here: the CLI prices one from the
-    // solved port voltage, corpus-pinned under PH8-CHK-001 (`dipole-ex4-freesp-51seg`).
-    // A seam that filtered on "voltage source" would have deleted that row.
-    for (ex, role) in nec_solver::feedpoints(deck) {
-        let Some((idx, seg)) =
-            nec_solver::find_deck_segment(segs, ex.tag, ex.segment).map(|i| (i, &segs[i]))
-        else {
-            continue;
-        };
+    // One row per driven segment, through the owner of "what drives a segment"
+    // (FND-305): two `EX` cards on one segment are one feed point, driven as NEC-2
+    // drives it, and the overridden card has no row — its nec2c row is a voltage
+    // over a current that card never drove. Plane waves are excluded — their
+    // tag/segment fields carry NTHETA/NPHI, not a driven segment — while current
+    // sources ARE feedpoints here: the CLI prices one from the solved port voltage,
+    // corpus-pinned under PH8-CHK-001 (`dipole-ex4-freesp-51seg`).
+    let driven = nec_solver::driven_segments(deck, segs).map_err(|e| e.to_string())?;
+    for d in driven.iter() {
+        let (idx, role, seg) = (d.idx, d.role, &segs[d.idx]);
 
         let current = i_vec[idx];
         // Through the shared seam, so this column and the GUI's gain correction
@@ -980,8 +979,8 @@ pub(super) fn build_feedpoint_rows(
         let mut z_in = nec_solver::feedpoint_impedance(
             v_source,
             current,
-            ex.tag as usize,
-            ex.segment as usize,
+            d.cards[0].tag as usize,
+            d.cards[0].segment as usize,
         )
         .map_err(|e| e.to_string())?;
 
@@ -1028,16 +1027,15 @@ pub(super) fn build_feedpoint_rows(
 }
 
 /// Each feedpoint row's absolute segment number, in [`build_feedpoint_rows`]'s
-/// order: [`nec_solver::feedpoints`] resolved through `find_deck_segment`, the
-/// same walk the rows take, so the two zip one to one.
+/// order: [`nec_solver::driven_segments`], the same walk the rows take, so the
+/// two zip one to one.
 pub(super) fn feedpoint_abs_segments(
     deck: &nec_model::deck::NecDeck,
     segs: &[Segment],
 ) -> Vec<usize> {
-    nec_solver::feedpoints(deck)
-        .filter_map(|(ex, _)| nec_solver::find_deck_segment(segs, ex.tag, ex.segment))
-        .map(|i| segs[i].abs_index as usize)
-        .collect()
+    nec_solver::driven_segments(deck, segs)
+        .map(|d| d.iter().map(|s| segs[s.idx].abs_index as usize).collect())
+        .unwrap_or_default()
 }
 
 pub(super) fn build_source_rows(deck: &nec_model::deck::NecDeck) -> Vec<SourceRow> {
@@ -1184,7 +1182,7 @@ pub(crate) fn probe_feedpoints(
         for w in shown {
             eprintln!("{}warning: {w}", cfg.stderr_prefix);
         }
-        for w in nec_solver::validate::solver_neutral_geometry_warnings(&segs) {
+        for w in nec_solver::validate::solver_neutral_warnings(deck, &segs) {
             eprintln!("{}warning: {w}", cfg.stderr_prefix);
         }
     }

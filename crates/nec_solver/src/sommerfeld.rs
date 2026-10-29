@@ -260,7 +260,9 @@ pub fn correction_applies(deck: &nec_model::deck::NecDeck, segs: &[crate::Segmen
     use nec_model::card::Card;
     let midpoints: Vec<[f64; 3]> = segs.iter().map(|s| s.midpoint).collect();
     let directions: Vec<[f64; 3]> = segs.iter().map(|s| s.direction).collect();
-    crate::feedpoints(deck).count() == 1
+    // One driven SEGMENT: two `EX` cards on one segment are one feed (FND-305),
+    // and counting cards declined the correction for a single feed spelt twice.
+    crate::driven_segments(deck, segs).is_ok_and(|d| d.len() == 1)
         && !deck
             .cards
             .iter()

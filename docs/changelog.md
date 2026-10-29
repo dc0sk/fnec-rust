@@ -97,6 +97,22 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **Two `EX` cards on one segment drive it as NEC-2 does** (FND-305). fnec summed
+  every card; NEC-2 applies the last type-0 card naming a segment (nec2c assigns its
+  field) and adds every type-5 card's. On a 21-segment dipole fed `EX 0 1 11 0 1 0`
+  then `EX 0 1 11 0 0.5 0` at 14.2 MHz fnec solved a 1.5 V drive; it now drives
+  0.5 V and its CURRENTS block is the 0.5 V deck's to every digit, as nec2c's is
+  (|I| 5.547e-3 A against nec2c's 5.4722e-3, 1.4 %). The impedance was the same either way
+  (78.955 + j43.484 Ω), which is why the finding hid. FEEDPOINTS, the JSON
+  `feedpoints` array and the bindings' rows have one row per driven segment, and
+  each overridden card earns a warning naming itself and the drive applied;
+  `N_SOURCES` still counts cards. Gain and NEC-2D's POWER BUDGET follow the applied
+  drive (1.18 mW, 2.16 dBi); nec2c's own INPUT POWER on such a deck sums one row
+  per card (3.55 mW, −2.61 dBi over the identical E-field), so it is not the
+  reference there. One owner, `nec_solver::driven_segments`, decides the drive for
+  the EFIE vector, every Hallén right-hand side, the section graph, the network
+  solve, the MPIE, the feedpoint rows and the input power. EX I4's
+  `INPUT_IMPEDANCE` finds its source by segment.
 - **`EX` I4 units digits 2–9, and units 1 with a negative F3, are refused** on a
   voltage source (types 0 and 5; FND-309). NEC-2 defines 0 and 1. nec2c reads 2
   as a fixed factor even when F3 = 0 (printing `INF`) and 3–9, or a negative F3,
@@ -116,6 +132,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A `TL` or `NT` port on a segment more than one `EX` card drives is refused**
+  (FND-305), on every frontend. nec2c prices that network from the first card and
+  drives the structure with the last: on two dipoles with `EX 0 1 11` 1 V, then
+  0.5 V, and `TL 1 11 2 11 50` its current (9.33e-3 + j9.41e-3 A) matches neither
+  card's deck and it reports 2.3 mW of NETWORK LOSS on a lossless line, so there
+  is no answer to gate against.
+- **A single feed spelt with two `EX` cards takes the Sommerfeld correction and
+  the `--hosts` route** (FND-305): both counted cards, so `--ground-solver
+  sommerfeld` declined such a deck as multi-feed and `--hosts` refused it, while
+  the report showed one feedpoint. The worker's feed row prices the drive the
+  solve applies (FND-297 d), which is now the last card's.
 - **The GUI's sweep and the distributed worker check the frequencies they run,
   not the deck's `FR`** (FND-290, FND-210's class). Both asked the deck, whose
   `FR` the sweep range and the wire's `frequency_hz` replace: a deck with
@@ -216,8 +243,8 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   21-segment dipole with `EX 0 1 11 0 1 0` and `EX 0 1 11 0 0.5 0` it returned
   52.64 + j28.99 Ω where the CLI says 78.96 + j43.48 Ω. The worker, the GUI and the
   bindings now all price the row through `nec_solver::feedpoint_drive_voltage`.
-  How two cards on one segment should combine is a separate finding: nec2c applies
-  the last card (FND-305).
+  How two cards on one segment combine is FND-305, fixed in this release: nec2c
+  applies the last card, and so does fnec now.
 - **One definition of the speed of light, μ0, ε0 and η0** (FND-297 b). Fourteen
   modules in four crates defined their own, and eight more sites wrote the value
   inline. They now read `nec_model::constants` (re-exported as
