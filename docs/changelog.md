@@ -17,6 +17,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **`--output-format json` carries `EX` I4's input-impedance table** as each
+  record's `input_impedance` object (FND-314): the feedpoint it follows
+  (`feedpoint_index` into `feedpoints`, `source_tag`, `source_seg`,
+  `source_abs_seg`), `normalization_ohms`, `normalized_to` (`"F3"` or `"MAX"`)
+  and the normalized `zn_re`, `zn_im`, `zn_abs`. Present exactly when the text
+  report prints the table, from the same decision, on both the local and the
+  `--hosts` route; a sweep that lost a point carries it on no record and says
+  so on stderr. The warning that JSON had no form for it is gone. An added
+  field, so v1 consumers are unaffected.
+
 - **`fnec converge`, the convergence-study helper** (GAP-012, BL-IMPR-017).
   It solves a deck as written and meshed 3× and 9× finer (`--factors`, odd and
   geometric: `1,3,9` by default, `1,3,9,27` allowed) and reports, for every

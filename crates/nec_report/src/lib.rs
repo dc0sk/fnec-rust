@@ -20,8 +20,8 @@ pub mod nec2d;
 pub mod sweep;
 
 pub use sweep::{
-    render_sweep_sections, InputImpedanceNorm, InputImpedanceRequest, SweepFeed, SweepPoint,
-    SweepSections,
+    input_impedance_table, render_sweep_sections, InputImpedanceNorm, InputImpedanceOutcome,
+    InputImpedanceRequest, InputImpedanceTable, SweepFeed, SweepPoint, SweepSections,
 };
 
 /// One row in the segment current distribution table.

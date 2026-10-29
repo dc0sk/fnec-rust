@@ -82,7 +82,6 @@ fn emit_sweep_points(
     solved: Vec<(usize, Result<FrequencySolveResult, String>, u128)>,
     output_format: OutputFormat,
     sweep_rows: &mut Vec<SweepPointSummary>,
-    json_records: &mut Vec<String>,
     nec2d_points: &mut Vec<(nec_report::PointReport, f64)>,
     enable_benchmarking: bool,
     bench_format: BenchFormat,
@@ -120,39 +119,10 @@ fn emit_sweep_points(
                 }
             }
         }
+        // A record per solved point, rendered after the sweep from these rows
+        // (`json_document`), so a record and the input-impedance table it carries
+        // come from one list (FND-314).
         if let Some(summary) = solved_point.sweep_summary {
-            if output_format == OutputFormat::Json {
-                // The unvalidated-solver caveat travels in the record itself, so a
-                // consumer that never reads stderr still sees it (FND-080). Absent
-                // for every validated solver: their records are unchanged.
-                let caveat = summary
-                    .caveat
-                    .map(|c| format!(",\"caveat\":\"{c}\""))
-                    .unwrap_or_default();
-                // Every feedpoint, always present, in the text report's order
-                // (FND-291). The top-level fields stay the first feedpoint's, so a
-                // consumer that reads `records[i]["z_re"]` is unchanged, and the
-                // array keeps one record per frequency. Both are written by
-                // `feedpoint_json_fields`, so the first element and the top level
-                // cannot disagree on a digit.
-                let feedpoints = summary
-                    .feedpoints
-                    .iter()
-                    .map(|f| {
-                        format!(
-                            "{{{}}}",
-                            feedpoint_json_fields(f.tag, f.seg, f.z_re, f.z_im)
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(",");
-                json_records.push(format!(
-                    "{{\"freq_mhz\":{freq_mhz},{fields}{caveat},\"feedpoints\":[{feedpoints}]}}",
-                    freq_mhz = summary.freq_mhz,
-                    fields =
-                        feedpoint_json_fields(summary.tag, summary.seg, summary.z_re, summary.z_im),
-                ));
-            }
             sweep_rows.push(summary);
         }
         eprintln!("{}", solved_point.diag_line);
@@ -192,7 +162,20 @@ fn print_sweep_sections(
     failed: &[usize],
     freqs_hz: &[f64],
 ) {
-    let points: Vec<nec_report::SweepPoint> = sweep_rows
+    let sections = nec_report::render_sweep_sections(
+        &sweep_points(sweep_rows),
+        input_impedance_request(deck),
+        &failed_mhz(failed, freqs_hz),
+    );
+    for w in &sections.warnings {
+        eprintln!("warning: {w}");
+    }
+    print!("{}", sections.text);
+}
+
+/// The sweep's rows in the renderer's terms.
+fn sweep_points(sweep_rows: &[SweepPointSummary]) -> Vec<nec_report::SweepPoint> {
+    sweep_rows
         .iter()
         .map(|r| nec_report::SweepPoint {
             freq_mhz: r.freq_mhz,
@@ -207,18 +190,108 @@ fn print_sweep_sections(
                 })
                 .collect(),
         })
-        .collect();
-    let failed_mhz: Vec<f64> = failed
+        .collect()
+}
+
+/// The frequencies (MHz) of the points that failed.
+fn failed_mhz(failed: &[usize], freqs_hz: &[f64]) -> Vec<f64> {
+    failed
         .iter()
         .filter_map(|&i| freqs_hz.get(i))
         .map(|f| f / 1e6)
-        .collect();
-    let sections =
-        nec_report::render_sweep_sections(&points, input_impedance_request(deck), &failed_mhz);
-    for w in &sections.warnings {
+        .collect()
+}
+
+/// The `--output-format json` document — one record per solved point — and the
+/// warnings it raises. Each record carries `input_impedance` when the deck's EX
+/// I4 asks for the table and the text report would print it (FND-314): the same
+/// [`nec_report::input_impedance_table`] decision, so text and JSON cannot pick a
+/// different source or factor. Both routes print through this.
+fn json_document(
+    deck: &nec_model::deck::NecDeck,
+    sweep_rows: &[SweepPointSummary],
+    failed: &[usize],
+    freqs_hz: &[f64],
+) -> (String, Vec<String>) {
+    let points = sweep_points(sweep_rows);
+    let (table, warnings) = match nec_report::input_impedance_table(
+        &points,
+        input_impedance_request(deck),
+        &failed_mhz(failed, freqs_hz),
+    ) {
+        nec_report::InputImpedanceOutcome::NoTable => (None, Vec::new()),
+        nec_report::InputImpedanceOutcome::Omitted(w) => (None, vec![w]),
+        nec_report::InputImpedanceOutcome::Table(t) => (Some(t), Vec::new()),
+    };
+    let records = sweep_rows
+        .iter()
+        .enumerate()
+        .map(|(i, summary)| {
+            // The unvalidated-solver caveat travels in the record itself, so a
+            // consumer that never reads stderr still sees it (FND-080). Absent for
+            // every validated solver: their records are unchanged.
+            let caveat = summary
+                .caveat
+                .as_ref()
+                .map(|c| format!(",\"caveat\":\"{c}\""))
+                .unwrap_or_default();
+            // Every feedpoint, always present, in the text report's order
+            // (FND-291). The top-level fields stay the first feedpoint's, so a
+            // consumer that reads `records[i]["z_re"]` is unchanged, and the array
+            // keeps one record per frequency. Both are written by
+            // `feedpoint_json_fields`, so the first element and the top level
+            // cannot disagree on a digit.
+            let feedpoints = summary
+                .feedpoints
+                .iter()
+                .map(|f| format!("{{{}}}", feedpoint_json_fields(f.tag, f.seg, f.z_re, f.z_im)))
+                .collect::<Vec<_>>()
+                .join(",");
+            // Last, so the record's existing prefix is byte-stable. The table's
+            // rows are `points`', which are these rows in order.
+            let input_impedance = table
+                .as_ref()
+                .map(|t| {
+                    let (src, zn) = (t.source(), t.normalized(i));
+                    format!(
+                        ",\"input_impedance\":{{\"feedpoint_index\":{},\"source_tag\":{},\
+                         \"source_seg\":{},\"source_abs_seg\":{},\"normalization_ohms\":{},\
+                         \"normalized_to\":\"{}\",\"zn_re\":{},\"zn_im\":{},\"zn_abs\":{}}}",
+                        t.feed_index,
+                        src.tag,
+                        src.seg,
+                        src.abs_seg,
+                        t.factor,
+                        t.normalized_to,
+                        zn.re,
+                        zn.im,
+                        zn.norm()
+                    )
+                })
+                .unwrap_or_default();
+            format!(
+                "{{\"freq_mhz\":{freq_mhz},{fields}{caveat},\"feedpoints\":[{feedpoints}]{input_impedance}}}",
+                freq_mhz = summary.freq_mhz,
+                fields = feedpoint_json_fields(summary.tag, summary.seg, summary.z_re, summary.z_im),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    (format!("[{records}]"), warnings)
+}
+
+/// Print [`json_document`], its warnings to stderr.
+fn print_json_document(
+    deck: &nec_model::deck::NecDeck,
+    sweep_rows: &[SweepPointSummary],
+    failed: &[usize],
+    freqs_hz: &[f64],
+) {
+    let (doc, warnings) = json_document(deck, sweep_rows, failed, freqs_hz);
+    for w in &warnings {
         eprintln!("warning: {w}");
     }
-    print!("{}", sections.text);
+    println!("{doc}");
 }
 
 /// The deck's input-impedance print (`nec_solver::input_impedance_print`) in the
@@ -233,20 +306,6 @@ fn input_impedance_request(
             nec_solver::ImpedanceNorm::Fixed(f) => nec_report::InputImpedanceNorm::Fixed(f),
             nec_solver::ImpedanceNorm::Max => nec_report::InputImpedanceNorm::Max,
         },
-    })
-}
-
-/// The `--output-format json` warning for a deck whose EX I4 asks for the
-/// input-impedance table over a sweep, which JSON has no form for yet.
-fn input_impedance_json_warning(
-    deck: &nec_model::deck::NecDeck,
-    n_points: usize,
-) -> Option<String> {
-    (n_points > 1 && nec_solver::input_impedance_print(deck).is_some()).then(|| {
-        "EX I4's input-impedance print (the text report's INPUT_IMPEDANCE section) has no \
-         JSON form yet and is not written; every point's feedpoint impedance is in the \
-         records. Use --output-format text for the normalized table."
-            .to_string()
     })
 }
 
@@ -541,13 +600,6 @@ fn main() -> ExitCode {
     } else {
         frequencies_from_fr(deck)
     };
-    // FND-309: the input-impedance table is a text section; JSON has no form for
-    // it yet. Both routes, before anything is solved.
-    if output_format == OutputFormat::Json {
-        if let Some(w) = input_impedance_json_warning(deck, freqs_hz.len()) {
-            eprintln!("warning: {w}");
-        }
-    }
     // After every configuration file is read (FND-150): a bad `--hosts` or
     // `--sweep-config` path is reported even on an undriven deck, as the comment
     // at the `--hosts` read promises (FND-181). Still ahead of the first deck
@@ -957,7 +1009,6 @@ fn main() -> ExitCode {
     let bench_deck = path.display().to_string();
     let bench_solver = solver_mode.as_str().to_string();
     let mut sweep_rows: Vec<SweepPointSummary> = Vec::new();
-    let mut json_records: Vec<String> = Vec::new();
     let mut nec2d_points: Vec<(nec_report::PointReport, f64)> = Vec::new();
 
     // ONE copy of this loop, not two. It was 57 lines duplicated byte for byte
@@ -970,7 +1021,6 @@ fn main() -> ExitCode {
         solved,
         output_format,
         &mut sweep_rows,
-        &mut json_records,
         &mut nec2d_points,
         enable_benchmarking,
         bench_format,
@@ -986,7 +1036,7 @@ fn main() -> ExitCode {
     }
 
     if output_format == OutputFormat::Json {
-        println!("[{records}]", records = json_records.join(","));
+        print_json_document(deck, &sweep_rows, &failed, &freqs_hz);
     }
     if output_format == OutputFormat::Nec2d {
         // A point that failed has no block, and NEC-2D has no partial run: the
@@ -1566,7 +1616,6 @@ fn run_distributed_solve(
     let bench_deck = path.display().to_string();
     let bench_solver = solver_mode.as_str().to_string();
     let mut sweep_rows: Vec<SweepPointSummary> = Vec::new();
-    let mut json_records: Vec<String> = Vec::new();
     let mut nec2d_points: Vec<(nec_report::PointReport, f64)> = Vec::new();
 
     // ONE copy of this loop, not two. It was 57 lines duplicated byte for byte
@@ -1578,7 +1627,6 @@ fn run_distributed_solve(
         solved,
         output_format,
         &mut sweep_rows,
-        &mut json_records,
         &mut nec2d_points,
         enable_benchmarking,
         bench_format,
@@ -1594,7 +1642,7 @@ fn run_distributed_solve(
     }
 
     if output_format == OutputFormat::Json {
-        println!("[{records}]", records = json_records.join(","));
+        print_json_document(deck, &sweep_rows, &failed, freqs_hz);
     }
 
     // The exit code still says the run was not clean, so a script checking the
@@ -1847,7 +1895,7 @@ mod tests {
     use super::{
         auto_select_execution_mode, detect_compatibility_profile, distributed_feedpoint,
         distributed_negative_resistance_warnings, distributed_pre_solve_caveats,
-        distributed_sweep_summary, exec_fallback_warning, worker_exec_preference,
+        distributed_sweep_summary, exec_fallback_warning, json_document, worker_exec_preference,
         worker_warning_lines, CompatibilityProfile, ExecutionMode,
     };
     use nec_report::FeedpointRow;
@@ -1896,6 +1944,56 @@ mod tests {
         assert_eq!((f.tag, f.seg, f.z_re, f.z_im), (2, 11, 70.5, -3.25));
         // And its absolute number, which INPUT_IMPEDANCE prints (FND-309).
         assert_eq!(f.abs_seg, 32);
+    }
+
+    /// FND-314 on the distributed route: its rows come from
+    /// `distributed_sweep_summary`, whose `(0, 0)` and `abs_seg` 0 fallbacks are
+    /// the route's own risk, and the JSON document carries the table from them as
+    /// the local route's does — one renderer serves both call sites. A tag-0
+    /// source on the second wire: tag 2, segment 11, absolute 32.
+    #[test]
+    fn a_distributed_json_document_carries_the_table() {
+        let text = "GW 1 21 0 0 -2.5 0 0 2.5 0.001\nGW 2 21 1 0 -2.5 1 0 2.5 0.001\nGE 0\n\
+                    EX 0 0 32 1 1 0 50\nFR 0 2 0 0 29.9 1\nEN\n";
+        let deck = nec_parser::parse(text).expect("parses").deck;
+        let segs = nec_solver::build_geometry(&deck).expect("geometry");
+        let rows = [
+            distributed_sweep_summary(29.9, 70.5, -3.25, &deck, &segs),
+            distributed_sweep_summary(30.9, 80.0, 20.0, &deck, &segs),
+        ];
+        let (doc, warnings) = json_document(&deck, &rows, &[], &[29.9e6, 30.9e6]);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let recs: Vec<serde_json::Value> = serde_json::from_str(&doc).expect("JSON");
+        assert_eq!(recs.len(), 2);
+        for (rec, z) in recs.iter().zip([(70.5, -3.25), (80.0, 20.0)]) {
+            let t = &rec["input_impedance"];
+            assert_eq!(
+                (
+                    t["feedpoint_index"].as_u64(),
+                    t["source_tag"].as_u64(),
+                    t["source_seg"].as_u64(),
+                    t["source_abs_seg"].as_u64(),
+                    t["normalized_to"].as_str(),
+                ),
+                (Some(0), Some(2), Some(11), Some(32), Some("F3")),
+                "{rec}"
+            );
+            // serde_json's default float parser is not correctly rounded (one
+            // ulp), so equality is to a few ulp, not bits.
+            let (re, im) = (t["zn_re"].as_f64().unwrap(), t["zn_im"].as_f64().unwrap());
+            assert!(
+                (re - z.0 / 50.0).abs() <= 4.0 * f64::EPSILON * re.abs()
+                    && (im - z.1 / 50.0).abs() <= 4.0 * f64::EPSILON * im.abs(),
+                "{rec}"
+            );
+        }
+        // One failed point: no table on either record, and the warning.
+        let (doc, warnings) = json_document(&deck, &rows[..1], &[1], &[29.9e6, 30.9e6]);
+        assert!(!doc.contains("input_impedance"), "{doc}");
+        assert!(
+            warnings.len() == 1 && warnings[0].contains("30.900000"),
+            "{warnings:?}"
+        );
     }
 
     fn row(z_re: f64) -> FeedpointRow {
