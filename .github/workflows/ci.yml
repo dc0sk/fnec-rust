@@ -165,8 +165,13 @@ jobs:
       # Findings ledger row shape: a deferred finding must name an owner, a fixed
       # one must cite the change that fixed it. Without this the states decay into
       # rows that only look resolved.
+      # A cited commit must be an ancestor of HEAD or carry its PR (#N): a
+      # squash-merge leaves a branch hash off main (FND-317). The rule needs
+      # this job's fetch-depth: 0; a shallow clone makes the checker exit 2.
       - name: Findings ledger rows are well-formed
-        run: python3 scripts/check-findings-ledger.py
+        run: |
+          python3 scripts/test-check-findings-ledger.py
+          python3 scripts/check-findings-ledger.py
       # Path inventory references must resolve: a cited test that has been renamed
       # away, or a gap row linking to no finding, turns the inventory into a
       # coverage claim backed by nothing.
