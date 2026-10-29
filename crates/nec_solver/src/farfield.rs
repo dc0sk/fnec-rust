@@ -443,16 +443,26 @@ pub fn feedpoint_input_power(
     i_vec: &[Complex64],
     port_voltage: Option<Complex64>,
 ) -> f64 {
+    // One term per driven SEGMENT (FND-305): `v_vec` already carries each
+    // segment's applied drive, so a per-card sum counted a segment two cards name
+    // twice. nec2c's INPUT POWER does exactly that — it sums one row per card — and
+    // its gain on such a deck is not a reference: 3.55 mW and −2.61 dBi where the
+    // deck with the overridden card deleted, whose E-field is identical, prints
+    // 1.18 mW and 2.16 dBi.
+    // Unreachable with an error: every caller has solved the deck, which resolved
+    // these same cards first. A 0 W return makes `gain_correction_db` decline
+    // (no correction), never divide by it.
+    let Ok(driven) = crate::excitation::driven_segments(deck, segs) else {
+        return 0.0;
+    };
     let mut total = 0.0;
-    for (ex, role) in crate::excitation::feedpoints(deck) {
-        let Some(idx) = crate::find_deck_segment(segs, ex.tag, ex.segment) else {
-            continue;
-        };
+    for d in driven.iter() {
+        let idx = d.idx;
         if idx >= v_vec.len() || idx >= i_vec.len() {
             continue;
         }
         let Some(v_source) =
-            crate::feedpoint_drive_voltage(role, segs[idx].length, v_vec[idx], port_voltage)
+            crate::feedpoint_drive_voltage(d.role, segs[idx].length, v_vec[idx], port_voltage)
         else {
             continue;
         };
