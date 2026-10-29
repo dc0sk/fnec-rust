@@ -157,6 +157,17 @@ FR 0 1 0 0 29.9 0.0
 EN
 """
 
+# A 10 m wire fed through a 50-ohm line on its end segment (FND-311).
+END_FED_THROUGH_A_LINE = """\
+GW 1 11 0 0 -5 0 0 5 0.001
+GW 3 5 100 0 -0.25 100 0 0.25 0.001
+GE 0
+EX 0 3 3 0 1.0 0.0
+TL 1 1 3 3 50 3.0 0 0 0 0
+FR 0 1 0 0 14.2 0.0
+EN
+"""
+
 # A U whose middle run is one segment: it solves, with no bend modelled, and the
 # bent-conductor caveat names the MPIE (FND-251).
 U_ONE_SEGMENT_MIDDLE = """\
@@ -240,6 +251,8 @@ def test_a_clean_deck_solves_with_no_warnings():
         (U_ONE_SEGMENT_MIDDLE, 'pass solver="mpie"'),
         # FND-294: a feed on a free-end segment.
         (END_FED, "at a free wire end"),
+        # FND-311: a network port at a free end that the network drives.
+        (END_FED_THROUGH_A_LINE, "carries the drive from feedpoint"),
     ],
 )
 def test_solvable_but_caveated_decks_emit_a_user_warning(deck, fragment):

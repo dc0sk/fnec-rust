@@ -33,7 +33,6 @@ use nec_model::card::{Card, NtCard};
 use nec_model::deck::NecDeck;
 
 use crate::geometry::Segment;
-use crate::tl::find_segment_index;
 
 const ZERO: Complex64 = Complex64::new(0.0, 0.0);
 
@@ -125,9 +124,49 @@ pub fn build_networks(
     Ok((networks, notes))
 }
 
-fn nt_two_port(nt: &NtCard, segs: &[Segment]) -> Result<(TwoPort, Vec<String>), String> {
-    let c = |(re, im): (f64, f64)| Complex64::new(re, im);
-    let name = format!(
+/// One `TL`/`NT` card's port segments, resolved without a frequency.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PortCard {
+    pub seg_a: usize,
+    pub seg_b: usize,
+    /// Whether the card couples its two ports: a `TL` always; an `NT` only when
+    /// its transfer admittance `Y12` is not exactly zero — with `Y12 = 0` it is
+    /// two one-ports, and neither port carries anything from the other.
+    pub coupled: bool,
+}
+
+/// Every network card's ports, in card order, by the resolution the solve uses
+/// ([`crate::tl::resolve_ports`]). Frequency-free: the free-end caveat asks which
+/// ports a feed reaches (FND-311), which no frequency changes. A card whose ports
+/// cannot be resolved is an `Err`, as in [`build_networks`].
+pub fn port_segments(deck: &NecDeck, segs: &[Segment]) -> Result<Vec<PortCard>, String> {
+    let mut out = Vec::new();
+    for card in &deck.cards {
+        let (ends, name, coupled) = match card {
+            Card::Tl(tl) => (
+                ((tl.tag1, tl.segment1), (tl.tag2, tl.segment2)),
+                crate::tl::tl_name(tl),
+                true,
+            ),
+            Card::Nt(nt) => (
+                ((nt.tag1, nt.segment1), (nt.tag2, nt.segment2)),
+                nt_name(nt),
+                nt.y12 != (0.0, 0.0),
+            ),
+            _ => continue,
+        };
+        let (seg_a, seg_b, _) = crate::tl::resolve_ports(&name, ends.0, ends.1, segs)?;
+        out.push(PortCard {
+            seg_a,
+            seg_b,
+            coupled,
+        });
+    }
+    Ok(out)
+}
+
+fn nt_name(nt: &NtCard) -> String {
+    format!(
         "NT {} {} {} {} {} {} {} {} {} {}",
         nt.tag1,
         nt.segment1,
@@ -139,16 +178,17 @@ fn nt_two_port(nt: &NtCard, segs: &[Segment]) -> Result<(TwoPort, Vec<String>), 
         nt.y12.1,
         nt.y22.0,
         nt.y22.1
-    );
-    let mut notes = Vec::new();
-    let mut end = |tag: u32, seg: u32| -> Result<usize, String> {
-        let (idx, _, note) = find_segment_index(segs, tag, seg)
-            .ok_or_else(|| crate::geometry::missing_reference(&name, tag, seg, segs))?;
-        notes.extend(note);
-        Ok(idx)
-    };
-    let a = end(nt.tag1, nt.segment1)?;
-    let b = end(nt.tag2, nt.segment2)?;
+    )
+}
+
+fn nt_two_port(nt: &NtCard, segs: &[Segment]) -> Result<(TwoPort, Vec<String>), String> {
+    let c = |(re, im): (f64, f64)| Complex64::new(re, im);
+    let (a, b, notes) = crate::tl::resolve_ports(
+        &nt_name(nt),
+        (nt.tag1, nt.segment1),
+        (nt.tag2, nt.segment2),
+        segs,
+    )?;
     Ok((
         TwoPort {
             seg_a: a,

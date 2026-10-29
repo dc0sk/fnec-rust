@@ -755,7 +755,8 @@ pub fn feedpoint_at_junction_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<S
     out
 }
 
-/// FND-294: one warning per feedpoint on a segment at a free wire end.
+/// FND-294: one warning per feedpoint on a segment at a free wire end — and,
+/// FND-311, per network port there that carries the drive.
 ///
 /// A gap at a free end is singular in the thin-wire model: fed on segment 1 of a
 /// 5 m, 1 mm wire at 29.9 MHz, the impedance moves with the mesh in fnec and in
@@ -765,27 +766,88 @@ pub fn feedpoint_at_junction_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<S
 /// nec2c 494.0 + j107.5 → 508.1 + j87.8). A caveat, not a refusal: nec2c answers
 /// these decks and end-fed antennas are common (decision D10).
 ///
-/// Feeds only — a delta gap or a current source, through
-/// [`crate::excitation::feedpoints`]; a `TL`/`NT` port at a free end is not
-/// measured. Judged by [`crate::geometry::at_free_end`], the predicate the MPIE's
-/// refusal uses, on whichever geometry `segs` is, and with the ground the Hallén
-/// refinement used, so a base-fed monopole over a ground is not caveated.
+/// A `TL`/`NT` port on such a segment is the same gap when its network carries a
+/// feed to it — an end-fed wire through a feedline or a matching network. nec2c's
+/// own impedance at that port equals the direct end feed's to four digits at
+/// every mesh (10 m wire, 14.2 MHz, 11 → 297 segments: 1273 − j1610 … 1954 −
+/// j44452 Ω), and the source behind an `NT` diverges in both codes (fnec 673 −
+/// j1362 → 55 − j7549 Ω, nec2c 1011 − j1525 → 69 − j8376 Ω). A **passive** port
+/// does not: its network only loads the wire, its current falls as the mesh
+/// refines and the feed converges onto the deck without it (FND-311). So a port
+/// is judged when its network component — the ports joined by cards that couple
+/// them ([`crate::network::PortCard::coupled`]: a `TL`, or an `NT` with `Y12 ≠
+/// 0`) — holds a feedpoint, and is not one itself. A deck whose network cards
+/// cannot be resolved is refused by the solve; the caveat skips them.
+///
+/// Feeds are a delta gap or a current source, through
+/// [`crate::excitation::feedpoints`]. Judged by [`crate::geometry::at_free_end`],
+/// the predicate the MPIE's refusal uses, on whichever geometry `segs` is, and with
+/// the ground the Hallén refinement used, so a base-fed monopole over a ground is
+/// not caveated.
 pub fn free_end_feed_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<String> {
     let at_end = crate::geometry::at_free_end(segs, crate::geometry::ground_joins_wire_ends(deck));
-    crate::excitation::feedpoints(deck)
-        .filter(|(ex, _)| {
-            crate::find_deck_segment(segs, ex.tag, ex.segment).is_some_and(|i| at_end[i])
-        })
+    let feeds: Vec<(u32, u32, Option<usize>)> = crate::excitation::feedpoints(deck)
         .map(|(ex, _)| {
-            format!(
-                "feedpoint tag {} segment {} is on a segment at a free wire end; a feed there \
-                 is singular in the thin-wire model, so the impedance keeps changing as the \
-                 mesh is refined (nec2c's does too) and is not a property of the antenna \
-                 (FND-294) — feed a segment in from the end, or model the feed's real geometry",
-                ex.tag, ex.segment
+            (
+                ex.tag,
+                ex.segment,
+                crate::find_deck_segment(segs, ex.tag, ex.segment),
             )
         })
-        .collect()
+        .collect();
+    let mut out: Vec<String> = feeds
+        .iter()
+        .filter(|(_, _, i)| i.is_some_and(|i| at_end[i]))
+        .map(|(tag, seg, _)| {
+            format!(
+                "feedpoint tag {tag} segment {seg} is on a segment at a free wire end; a feed there \
+                 is singular in the thin-wire model, so the impedance keeps changing as the \
+                 mesh is refined (nec2c's does too) and is not a property of the antenna \
+                 (FND-294) — feed a segment in from the end, or model the feed's real geometry"
+            )
+        })
+        .collect();
+    let Ok(cards) = crate::network::port_segments(deck, segs) else {
+        return out;
+    };
+    // Network components over the coupling cards, by union-find on segments.
+    let mut parent: std::collections::BTreeMap<usize, usize> = cards
+        .iter()
+        .flat_map(|c| [(c.seg_a, c.seg_a), (c.seg_b, c.seg_b)])
+        .collect();
+    fn root(parent: &mut std::collections::BTreeMap<usize, usize>, mut x: usize) -> usize {
+        while parent[&x] != x {
+            let up = parent[&parent[&x]];
+            parent.insert(x, up);
+            x = up;
+        }
+        x
+    }
+    for c in cards.iter().filter(|c| c.coupled) {
+        let (a, b) = (root(&mut parent, c.seg_a), root(&mut parent, c.seg_b));
+        parent.insert(a, b);
+    }
+    let ports: Vec<usize> = parent.keys().copied().collect();
+    for p in ports {
+        if !at_end[p] || feeds.iter().any(|f| f.2 == Some(p)) {
+            continue;
+        }
+        let r = root(&mut parent, p);
+        let Some((tag, seg, _)) = feeds.iter().find(|f| {
+            f.2.is_some_and(|i| parent.contains_key(&i) && root(&mut parent, i) == r)
+        }) else {
+            continue;
+        };
+        out.push(format!(
+            "network port tag {} segment {} is on a segment at a free wire end and carries the \
+             drive from feedpoint tag {tag} segment {seg} through a TL/NT network: a port there \
+             is a feed, singular in the thin-wire model, so the impedance keeps changing as the \
+             mesh is refined (nec2c's does too) and is not a property of the antenna (FND-311) — \
+             connect the network a segment in from the end",
+            segs[p].tag, segs[p].tag_index
+        ));
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
