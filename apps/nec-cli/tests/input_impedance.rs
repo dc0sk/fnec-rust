@@ -14,7 +14,10 @@
 //!   the 5 m dipole on 11 segments) miss it — fnec's reactance there is 3.6 Ω
 //!   (4.5 % of |Z|) from nec2c's at 28 MHz, closing as the mesh refines (2.8 %
 //!   at 21, 1.75 % at 41, 1.4 % at 81 segments), which is FND-315, not a reason
-//!   to widen. The 11-segment `fixed` deck is kept for the header nec2c prints
+//!   to widen. FND-315 is measured: both codes reach the same limit and fnec's
+//!   coarse-mesh error constant is 2.5–3× nec2c's; the 1.40 % margin is that
+//!   constant. A failure here means it moved — re-measure it against
+//!   `dipole_shared_limit.rs`'s series, do not widen or re-mesh. The 11-segment `fixed` deck is kept for the header nec2c prints
 //!   (SOURCE SEGMENT 6) and the identity. Worst component at 81 segments: 1.40 %
 //!   of |Z| (29 MHz, X), so the margin is thin by measurement, not by choice.
 //! - **identity**: each normalized Z is that point's FEEDPOINTS Z over the

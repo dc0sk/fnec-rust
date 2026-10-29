@@ -173,7 +173,10 @@ mesh's impedance itself.
 `r ≥ 1`). `SETTLED true` when the tail is within the tolerance on R and on X;
 then `Z_EXTRAPOLATED` is the finest mesh plus the tail. `CLASS` is `settling`,
 `diverging`, or (four meshes or more, the last two ratios both in 0.7–1.3)
-`log-drift`. Two meshes give a step and `SETTLED undecided`.
+`log-drift`. Two meshes give a step and `SETTLED undecided`. `SETTLED`
+means the remaining drift is within the tolerance, not that a limit was reached:
+a delta-gap feed's reactance drifts slowly with the mesh in every code, nec2c's
+included (FND-232).
 
 **Output** (stdout; each mesh's caveats, warnings and `diag:` line go to stderr
 prefixed `mesh 3x: `):
@@ -369,6 +372,14 @@ old per-wire fallback and is **warned about, not blocked**; the warning names
 `--solver mpie` where the MPIE takes the deck. A negative feedpoint resistance
 is reported as an explicit warning, since a passive antenna cannot have one
 (PH9-CHK-005).
+
+**Coarse meshes.** On a straight dipole Hallén converges to nec2c's answer, but
+its error on a coarse mesh is 2.5–3× nec2c's (FND-315): the 5 m, 1 mm dipole at
+28 MHz reads X 3.6 Ω (4.8 % of |Z|) from nec2c at 11 segments, 1.2 % at 81 and
+0.3 % at 641, and both codes then reach the same limit (an offset under 0.1 % of
+|Z| on a 0.2 mm wire, measured to 2561 segments). For nec2c's reactance error on
+such a wire, give fnec 3–4× the segments; `fnec converge` shows where the series
+stands.
 
 **Free wire ends are refined** (FND-227): every segment at a free wire end — an end
 no other segment shares, and not on the ground plane over a ground — is split into
