@@ -7,16 +7,15 @@
 //
 // The port impedance Z = V/I is a property of the antenna, independent of how it is
 // driven. So on a degree-2 junctioned geometry the current-source solve
-// (Z = V_port/i0, via solve_hallen_current_source_paths) must match the
-// voltage-source solve (Z = 1/I_feed, via solve_hallen_paths) at the same feed —
-// the internal consistency gate, no external reference needed.
+// (Z = V_port/i0) must match the voltage-source solve (Z = 1/I_feed) at the same
+// feed — the internal consistency gate, no external reference needed. Both go
+// through `solve_hallen_routed`, the only solve of a non-trivial path (FND-310),
+// so since FND-118 they are one unit-gap solve rescaled: this pins the routing and
+// the rescaling, not two independent solvers.
 
 use nec_model::card::{Card, ExCard, GwCard};
 use nec_model::deck::NecDeck;
-use nec_solver::{
-    assemble_z_matrix_with_ground, build_geometry, solve_current_source_hallen, GroundModel,
-    Segment,
-};
+use nec_solver::{assemble_z_matrix_with_ground, build_geometry, GroundModel, Segment};
 use num_complex::Complex64;
 
 const FREQ: f64 = 14.2e6;
@@ -53,7 +52,7 @@ fn voltage_source_z(deck: &NecDeck, segs: &[Segment], feed_tag: u32, feed_seg: u
 }
 
 /// Current-source feedpoint impedance (Z = V_port/i0) + the forced feed current,
-/// through the conductor-path current-source solver.
+/// through the routed solve.
 fn current_source_z(
     deck: &NecDeck,
     segs: &[Segment],
@@ -61,7 +60,7 @@ fn current_source_z(
     feed_seg: u32,
     i0: Complex64,
 ) -> (Complex64, Complex64) {
-    let z = assemble_z_matrix_with_ground(segs, FREQ, &GroundModel::FreeSpace);
+    let mut z = assemble_z_matrix_with_ground(segs, FREQ, &GroundModel::FreeSpace);
     // The entry point reads i0 from the deck's own EX card, so the amplitude
     // under test has to go there rather than into a parameter beside it —
     // otherwise `i0` names an amplitude the solve never sees, which is how this
@@ -77,13 +76,19 @@ fn current_source_z(
         }
     }
     // Through the production entry point. The bespoke path current-source solver
-    // is gone: a current source is now the voltage solve rescaled (FND-118).
-    let fp = solve_current_source_hallen(&d, segs, &z, FREQ).expect("current-source solve");
+    // is gone: a current source is now the voltage solve rescaled (FND-118), and a
+    // non-trivial path is the routed solve's alone — the library entry refuses it
+    // (FND-310). These decks carry no loads, so the diagonal is empty.
+    let routed =
+        nec_solver::solve_hallen_routed(&d, segs, &mut z, FREQ, &[]).expect("current-source solve");
     let src_seg = segs
         .iter()
         .position(|s| s.tag == feed_tag && s.tag_index == feed_seg)
         .expect("feed segment");
-    (fp.port_voltage / i0, fp.currents[src_seg])
+    let port_voltage = routed
+        .port_voltage
+        .expect("a current-source solve has a port voltage");
+    (port_voltage / i0, routed.currents[src_seg])
 }
 
 /// Split λ/2 dipole: two 26-seg arms that BOTH start at the origin (start-to-start,

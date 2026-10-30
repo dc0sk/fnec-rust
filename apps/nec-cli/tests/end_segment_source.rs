@@ -309,7 +309,8 @@ fn a_feed_in_from_a_free_end_is_not_caveated() {
                 EX 0 1 11 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n";
     let tee = "CE\nGW 1 11 0 0 0 0 0 3 0.001\nGW 2 11 0 0 3 -2 0 3 0.001\n\
                GW 3 11 0 0 3 2 0 3 0.001\nGE 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n";
-    // Feeds only (D10): a TL port on a free-end segment is not judged.
+    // A passive port: the line joins wire 2's end to wire 1's end segment, and no
+    // feed is on the network (FND-311 judges only a port the network drives).
     let tl_port = "CE\nGW 1 21 0 0 -2.5 0 0 2.5 0.001\nGW 2 21 1 0 -2.5 1 0 2.5 0.001\nGE 0\n\
                    EX 0 1 11 0 1 0\nTL 1 1 2 21 50 0 0 0 0 0\nFR 0 1 0 0 29.98 0\nEN\n";
     let cases: Vec<(&str, String, (u32, u32))> = vec![
@@ -325,7 +326,106 @@ fn a_feed_in_from_a_free_end_is_not_caveated() {
         assert!(ok, "{what}: must solve:\n{stderr}");
         z_at(&stdout, tag, seg);
         assert!(
+            !stderr.contains(FREE_END_CAVEAT) && !stderr.contains(DRIVEN_PORT_CAVEAT),
+            "{what}: caveated:\n{stderr}"
+        );
+    }
+}
+
+/// The FND-311 caveat's own words, unique to it.
+const DRIVEN_PORT_CAVEAT: &str = "carries the drive from feedpoint";
+
+/// FND-311's 10 m wire at 14.2 MHz, its far end on segment 1, beside a short
+/// 5-segment source wire 100 m away (tag 3), with `cards` on them.
+fn end_fed_through(cards: &str) -> String {
+    format!(
+        "CE\nGW 1 11 0 0 -5 0 0 5 0.001\nGW 3 5 100 0 -0.25 100 0 0.25 0.001\nGE 0\n\
+         {cards}FR 0 1 0 0 14.2 0\nEN\n"
+    )
+}
+
+/// FND-311: a `TL`/`NT` port on a free-end segment whose network carries a feed
+/// to it is a free-end feed — an end-fed wire through a feedline or a matching
+/// network. nec2c's impedance at that port equals the direct end feed's to four
+/// digits at every mesh (10 m wire, 11 → 297 segments: 1273 − j1610 … 1954 −
+/// j44452 Ω), and the source behind the `NT` below diverges in both codes: fnec
+/// 673 − j1362 / 575 − j3686 / 218 − j6008 / 55 − j7549 Ω at 1× / 3× / 9× /
+/// 27×, nec2c 1011 − j1525 / 904 − j4548 / 303 − j7029 / 69 − j8376 Ω
+/// (`~/.cache/swap/fnd311-measurement.md`; Fable reproduced it). Caveated once
+/// per port, by the port's own segment, and not as a feed. A chain counts: a line
+/// to a port that a network joins to the feed.
+#[test]
+fn a_port_driven_through_a_network_at_a_free_end_is_caveated() {
+    let cases: [(&str, String); 3] = [
+        (
+            "feedline (TL)",
+            end_fed_through("EX 0 3 3 0 1 0\nTL 1 1 3 3 50 3.0 0 0 0 0\n"),
+        ),
+        (
+            "matching network (NT)",
+            end_fed_through("EX 0 3 3 0 1 0\nNT 1 1 3 3 1 0 -1 0 1 0\n"),
+        ),
+        (
+            "line to a network on the feed",
+            end_fed_through("EX 0 3 3 0 1 0\nTL 1 1 3 2 50 3.0 0 0 0 0\nNT 3 2 3 3 1 0 -1 0 1 0\n"),
+        ),
+    ];
+    for (what, deck) in cases {
+        let (ok, stdout, stderr) = run(&[], &deck);
+        assert!(ok, "{what}: a caveat, not a refusal (D10):\n{stderr}");
+        z_at(&stdout, 3, 3);
+        let want = format!(
+            "network port tag 1 segment 1 is on a segment at a free wire end and \
+             {DRIVEN_PORT_CAVEAT} tag 3 segment 3"
+        );
+        assert!(stderr.contains(&want), "{what}: no caveat:\n{stderr}");
+        assert_eq!(
+            stderr.matches(DRIVEN_PORT_CAVEAT).count(),
+            1,
+            "{what}: {stderr}"
+        );
+        assert!(
             !stderr.contains(FREE_END_CAVEAT),
+            "{what}: judged as a feed:\n{stderr}"
+        );
+    }
+}
+
+/// FND-311's negative controls: a port at a free end that no network drives, or a
+/// driven network whose port is in from the end. Each solves and reports its
+/// feedpoint beside the absence.
+#[test]
+fn a_port_no_network_drives_or_in_from_the_end_is_not_caveated() {
+    let monopole_port = "CE\nGW 1 26 0 0 0 0 0 2.5 0.001\nGW 3 5 10 0 4.75 10 0 5.25 0.001\nGE 1\n\
+                         GN 1\nEX 0 3 3 0 1 0\nTL 1 1 3 3 50 3.0 0 0 0 0\nFR 0 1 0 0 29.98 0\nEN\n";
+    let cases: Vec<(&str, String)> = vec![
+        // The driven feedline with its port moved to segment 3, 2.7 m in: settles
+        // in both codes.
+        (
+            "driven port in from the end",
+            end_fed_through("EX 0 3 3 0 1 0\nTL 1 3 3 3 50 3.0 0 0 0 0\n"),
+        ),
+        // An NT with Y12 = 0 is two one-ports: the free-end port is a shunt
+        // admittance only, and carries nothing from the feed (FND-230's case).
+        (
+            "NT with Y12 = 0",
+            end_fed_through("EX 0 3 3 0 1 0\nNT 1 1 3 3 1e-5 0 0 0 0 0\n"),
+        ),
+        // A line to a port that a coupling network joins to another port, the feed
+        // on neither: passive.
+        (
+            "network chain without the feed",
+            end_fed_through("EX 0 3 3 0 1 0\nTL 1 1 3 2 50 3.0 0 0 0 0\nNT 3 2 3 4 1 0 -1 0 1 0\n"),
+        ),
+        // The port on a monopole's base: that end joins its image over GN 1.
+        ("driven port on a grounded base", monopole_port.to_string()),
+    ];
+    for (what, deck) in cases {
+        let (ok, stdout, stderr) = run(&[], &deck);
+        assert!(ok, "{what}: must solve:\n{stderr}");
+        z_at(&stdout, 3, 3);
+        assert!(
+            !stderr.contains(FREE_END_CAVEAT) && !stderr.contains(DRIVEN_PORT_CAVEAT),
             "{what}: caveated:\n{stderr}"
         );
     }
@@ -362,4 +462,40 @@ fn converge_caveats_a_free_end_feed_on_every_mesh() {
             "no {mesh:?} caveat:\n{stderr}"
         );
     }
+}
+
+/// FND-311 through `fnec converge`, which judges every mesh's own geometry: with
+/// `--ends keep` the port stays on the end segment and every mesh is caveated;
+/// with `--ends centre` it moves in from the end (1×: 1, 3×: 2, 9×: 5) and only
+/// the 1× mesh is — while the source R settles, 1.141 → 1.215 → 1.252 Ω,
+/// against keep's 1.141 → 0.166 → 0.024 Ω. A judge that read the 1× deck's port
+/// for every mesh fails the second half.
+#[test]
+fn converge_judges_the_driven_port_on_each_mesh() {
+    let deck = end_fed_through("EX 0 3 3 0 1 0\nTL 1 1 3 3 50 3.0 0 0 0 0\n");
+    for (ends, meshes) in [("keep", vec!["1x", "3x", "9x"]), ("centre", vec!["1x"])] {
+        let (ok, stdout, stderr) = run(&["converge", "--ends", ends], &deck);
+        assert!(
+            ok && stdout.contains("MESH 9 "),
+            "{ends}:\n{stderr}\n{stdout}"
+        );
+        let caveated: Vec<&str> = stderr
+            .lines()
+            .filter(|l| l.contains(DRIVEN_PORT_CAVEAT))
+            .map(|l| l.split(':').next().unwrap().trim_start_matches("mesh "))
+            .collect();
+        assert_eq!(caveated, meshes, "{ends}:\n{stderr}");
+    }
+}
+
+/// A feed on the free-end port itself is FND-294's case, caveated once as a feed,
+/// not a second time as a driven port.
+#[test]
+fn a_feed_on_the_free_end_port_is_caveated_once_as_a_feed() {
+    let deck = end_fed_through("EX 0 1 1 0 1 0\nTL 1 1 3 3 50 3.0 0 0 0 0\n");
+    let (ok, stdout, stderr) = run(&[], &deck);
+    assert!(ok, "{stderr}");
+    z_at(&stdout, 1, 1);
+    assert_eq!(stderr.matches(FREE_END_CAVEAT).count(), 1, "{stderr}");
+    assert!(!stderr.contains(DRIVEN_PORT_CAVEAT), "{stderr}");
 }

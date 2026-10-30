@@ -10,11 +10,11 @@
 
 use num_complex::Complex64;
 
-use crate::excitation::{build_current_source_shape, build_current_source_shape_paths};
+use crate::excitation::build_current_source_shape;
 use crate::geometry::{
     detect_wire_junctions, merge_collinear_wire_endpoints, wire_endpoints_from_segs, Segment,
 };
-use crate::linear::{solve_hallen, solve_hallen_paths};
+use crate::linear::solve_hallen;
 use crate::matrix::ZMatrix;
 use crate::{ExcitationError, SolveError};
 use nec_model::card::Card;
@@ -47,11 +47,13 @@ pub enum CurrentSourceError {
     },
     Excitation(ExcitationError),
     Solve(SolveError),
-    /// A junction, loop or radius step the section graph takes: that solve needs the matrix
+    /// A junction, loop or radius step the section graph takes, or a bent or
+    /// reversed conductor path: reached through
+    /// [`crate::hallen_session::solve_hallen_routed`]. The graph needs the matrix
     /// UNSTAMPED, with the loads as graph columns, while this entry's contract is
-    /// a stamped matrix — so it is reached through
-    /// [`crate::hallen_session::solve_hallen_routed`], which decides before
-    /// stamping (FND-198, FND-211).
+    /// a stamped matrix (FND-198, FND-211); a path's node rows need every feed,
+    /// port and load step marked as a gap, which only the routed solve knows —
+    /// this entry was given a stamped matrix and no loads (FND-310).
     NeedsRoutedSolve,
 }
 
@@ -74,9 +76,9 @@ impl std::fmt::Display for CurrentSourceError {
             Self::Solve(e) => write!(f, "{e}"),
             Self::NeedsRoutedSolve => write!(
                 f,
-                "EX: a current source on a junction, loop or radius step is solved on the \
-                 section graph from the unstamped matrix; call solve_hallen_routed, which takes \
-                 it before stamping the loads"
+                "EX: a current source on a junction, loop, radius step or bent or reversed \
+                 conductor path is solved by solve_hallen_routed, which sees the run's loads \
+                 and ports; this entry solves straight and collinear wires only"
             ),
         }
     }
@@ -86,12 +88,17 @@ impl std::fmt::Display for CurrentSourceError {
 /// 4): force the specified current on the source segment and return the segment
 /// currents plus the port voltage `V` (feedpoint impedance `Z = V/i0`).
 ///
-/// Straight, non-junctioned wires (one or more) solve on the per-wire path.
-/// **Junctioned degree-2 geometry** (bends, start-to-start / end-to-end splits,
-/// inverted-V) solves on continuous *conductor paths* (PH9-CHK-002): one homogeneous
-/// `cos(k·s)` constant per path plus the port voltage, `I = 0` at the free ends, and
-/// the forced `I[src] = i0`. Out-of-scope topologies (degree-3+ T/Y, closed loops)
-/// return `None` from `build_conductor_paths` and fail fast with a diagnostic.
+/// Straight, non-junctioned wires (one or more, collinear splits merged) solve on
+/// the per-wire path. **Junctioned degree-2 geometry** (bends, start-to-start /
+/// end-to-end splits, inverted-V) is refused with
+/// [`CurrentSourceError::NeedsRoutedSolve`]: its conductor-path solve marks every
+/// feed, port and load step as a gap its node rows must not extrapolate across
+/// (FND-270), and this entry, given a stamped matrix and no load diagonal, could
+/// only rebuild the deck's `LD` cards — dropping `--loads-config` loads — and
+/// mark its own source alone. It was a second copy of the routed solve's path
+/// arm, reached by no frontend; it is gone rather than given a load parameter
+/// (FND-310). Out-of-scope topologies (degree-3+ T/Y, closed loops) fail fast
+/// with [`CurrentSourceError::UnsupportedTopology`].
 /// `z_mat` is the assembled Hallén matrix (including any load / TL stamps). A
 /// junction or loop the section graph takes needs the matrix unstamped instead,
 /// so it is refused here with [`CurrentSourceError::NeedsRoutedSolve`]: one entry
@@ -131,9 +138,9 @@ pub fn solve_current_source_hallen(
 
     let i0 = Complex64::new(cs.voltage_real, cs.voltage_imag);
 
-    // Route junctioned degree-2 geometry through the conductor-path current-source
-    // solver. Reducible decks (single wires, collinear chains, parallel arrays) keep
-    // the validated per-wire path; only a non-trivial (bent / reversed) path diverts.
+    // Reducible decks (single wires, collinear chains, parallel arrays) solve on
+    // the validated per-wire path here; a non-trivial (bent / reversed) path is the
+    // routed solve's, and is refused (FND-310).
     //
     // The three-way match is load-bearing, and a two-way one is a live regression:
     // `Reducible` and `Unsupported` must NOT share an arm. A collinear chain is
@@ -151,31 +158,10 @@ pub fn solve_current_source_hallen(
         return Err(CurrentSourceError::NeedsRoutedSolve);
     }
     match crate::hallen_session::classify_paths(segs, &ground) {
-        crate::hallen_session::PathRoute::NonTrivial(paths) => {
-            let (shape, cos_vec, sin_vec, src_seg) =
-                build_current_source_shape_paths(deck, segs, freq_hz, cs.tag, cs.segment, &paths)
-                    .map_err(CurrentSourceError::Excitation)?;
-            // The source's own segment is a gap the rows must respect, and so is a
-            // load step (FND-270); `z_mat` carries the loads already, stamped.
-            let gaps = crate::hallen_session::NodeGaps::new(
-                segs,
-                vec![src_seg],
-                &crate::loads::build_loads(deck, segs, freq_hz).0,
-            );
-            let (path_of, free_ends, bends) =
-                crate::hallen_session::group_sections(segs, &paths, freq_hz, &ground, &gaps);
-            let sol = solve_hallen_paths(
-                z_mat, &shape, &cos_vec, &sin_vec, &path_of, &free_ends, &bends,
-            )
-            .map_err(CurrentSourceError::Solve)?;
-            let (currents, port_voltage) =
-                scale_to_impressed_current(sol.currents, src_seg, i0, cs.tag, cs.segment)?;
-            return Ok(CurrentSourceFeedpoint {
-                currents,
-                port_voltage,
-                source_tag: cs.tag,
-                source_segment: cs.segment,
-            });
+        // The routed solve's path arm, with the run's loads and ports as gaps
+        // (FND-310). The session never sends a non-trivial path here.
+        crate::hallen_session::PathRoute::NonTrivial(_) => {
+            return Err(CurrentSourceError::NeedsRoutedSolve);
         }
         crate::hallen_session::PathRoute::Reducible => {}
         crate::hallen_session::PathRoute::Unsupported => {
@@ -208,7 +194,7 @@ pub fn solve_current_source_hallen(
         build_current_source_shape(deck, segs, freq_hz, cs.tag, cs.segment)
             .map_err(CurrentSourceError::Excitation)?;
     // No junction constraints: this branch runs only when the geometry has none.
-    // A non-trivial path diverted above, and a junction without paths was refused
+    // A non-trivial path was refused above, and so was a junction without paths
     // as unsupported topology, so anything reaching here is a single conductor or
     // a set of independent ones.
     let sol = solve_hallen(z_mat, &shape, &cos_vec, &sin_vec, &merged_endpoints, &[])

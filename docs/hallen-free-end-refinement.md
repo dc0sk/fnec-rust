@@ -143,7 +143,8 @@ the gate is an MPIE pattern value pinned against today's.
   #562 refusal stays as a backstop and becomes unreachable on product paths.
 - An end-fed answer is the mesh's, not the antenna's: with the gap on the end
   segment it keeps moving as the mesh refines, in nec2c as in fnec. Every Hallén
-  route says so for a feed (`EX` 0/4/5) there (FND-294, a caveat, not a refusal);
+  route says so for a feed (`EX` 0/4/5) there (FND-294, a caveat, not a refusal),
+  and for a `TL`/`NT` port there that its network drives (FND-311);
   `nec_solver::geometry::at_free_end` is the one predicate — the `Centre` third on
   this geometry, `free_end_segments` on the deck's — which the MPIE's end-feed
   refusal (FND-228) uses too.
@@ -225,7 +226,8 @@ silently. The worker reports a `mesh` field; the controller refuses a mismatch.
   on the same mesh; 6 → 7 % vs the MPIE, which does not move).
 - **nec2c on the same mesh stopped being the nearer answer** (FND-232). Where a gate
   compared with nec2c at the deck's own segment count, fnec now converges faster and
-  passes nec2c on the way: the off-centre feed (fnec 375.9 / 380.6 / 381.9, nec2c
+  passes nec2c on the way on these decks (on the plain centre-fed dipole nec2c stays
+  nearer at every mesh, FND-315): the off-centre feed (fnec 375.9 / 380.6 / 381.9, nec2c
   366.9 / 376.8 / 379.3 at 42 / 126 / 210), the stem-fed Y (both extrapolate to
   ≈ 20.5 − j1714). Those gates were re-pointed at nec2c on a finer mesh, the feed on
   the same point (segment k → 27k − 13). Changed tolerances, each with its measurement

@@ -107,3 +107,34 @@ fn a_network_refused_at_a_listed_frequency_names_it_and_the_list() {
         String::from_utf8_lossy(&ok.stderr)
     );
 }
+
+/// FND-316: a `--sweep-config` range whose step is below its resolution is
+/// refused through the binary, exit 1, before anything is solved; the same deck
+/// over a range at an ordinary step solves (the control).
+#[test]
+fn a_range_step_below_the_resolution_is_refused_by_the_binary() {
+    let deck = tmp("res.nec", &deck_with(""));
+    let sweep = tmp(
+        "res.toml",
+        "[frequency]\nstart_mhz = 1000.0\nend_mhz = 1000.000000000001\nstep_mhz = 1e-13\n",
+    );
+    let out = run(&deck, Some(&sweep));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.code() == Some(1)
+            && stderr.contains("below the resolution")
+            && out.stdout.is_empty(),
+        "{:?}\n{stderr}",
+        out.status
+    );
+    let ok = tmp(
+        "ok.toml",
+        "[frequency]\nstart_mhz = 14.2\nend_mhz = 14.3\nstep_mhz = 0.1\n",
+    );
+    let out = run(&deck, Some(&ok));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
