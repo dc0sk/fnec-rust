@@ -24,7 +24,7 @@ This is a drop-in at an early evidence tier. Read this list before installing.
 - **Not tested:** real Windows, and therefore Windows Defender and SmartScreen. The binary is **unsigned**.
 - **64-bit Windows only.** 4nec2 itself is 32-bit, and starting a 64-bit kernel from it works under Wine's win64 prefix. There is no 32-bit build.
 - **CPU only:** the kernel runs fnec with `--exec cpu`.
-- **fnec's answer, not NEC-2's.** The report has NEC-2's layout, but fnec solves it, with a Hallén formulation that differs from NEC-2's own. Its numbers differ from the old kernel's by fnec's discretisation; both converge to the same values as the mesh is refined. A line before `RUN TIME` names fnec as the solver.
+- **fnec's answer, not NEC-2's.** The report has NEC-2's layout, but fnec solves it, with a Hallén formulation that differs from NEC-2's own. Its numbers differ from the old kernel's by fnec's discretisation; both converge to the same values as the mesh is refined. On a coarse mesh fnec's reactance error is 2.5–3× nec2c's (a dipole at 11 segments a half-wave: 4.8 % of |Z|, at 81: 1.2 %), so a deck meshed for NEC-2's accuracy needs 3–4× the segments for the same reactance in fnec (FND-315). A line before `RUN TIME` names fnec as the solver.
 - **What fnec cannot print yet is refused.** For those decks, 4nec2 shows "NEC error?", and F8 shows fnec's reason:
   - networks and transmission lines (`NT`, `TL`);
   - Sommerfeld ground (`GN 2`);

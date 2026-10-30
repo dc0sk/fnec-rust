@@ -35,6 +35,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/current_source_junction.rs` | 2 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
 | `apps/nec-cli/tests/deck_reference_resolver.rs` | 2 | A deck reference `(tag, segment)` becomes a segment in one place: `nec_solver::find_deck_segment`; the scan refuses an inline `tag_index ==` lookup in any product source (self-checked on a planted copy). | FND-135, FND-227 |
 | `apps/nec-cli/tests/deck_validator.rs` | 5 | Deck validator **refuses** a missing `EX` (error-level, FND-145) on every advertised `--solver` mode and output format; silent on well-formed decks | FR-009, EP-4 |
+| `apps/nec-cli/tests/dipole_shared_limit.rs` | 2 | FND-315 — fnec's dipole converges to nec2c's limit: the 5 m, 0.2 mm dipole at 28/29/30 MHz, `--exec cpu`, against nec2c 1.3.1 EK's stored digits — Hallén at 641 segments within 0.20 Ω (X) / 0.06 Ω (R), approaching from below (ΔX(161) < ΔX(641) < 0) and still contracting (the 641 gap ≤ 0.45× the 161 gap); the MPIE at 641 within 0.10 Ω and from below. A +0.2 Ω and a −0.06 Ω shift of X each fail it | FND-315 |
 | `apps/nec-cli/tests/end_segment_source.rs` | 17 | FND-227 / FND-230 — a source, load or port on the segment at a free wire end: solved on every Hallén route and exec, within 2.5 % / 2 % of the wire meshed 3× finer, an end-segment load seen (ΔZ within 15 % of nec2c's), segment 0 still unnamed, a fat end judged by its deck length, the MPIE's refusal kept. FND-294: a feed (first or last segment, voltage or current source) at a free end solves with its caveat, once; an interior feed, a centre-fed dipole, a base-fed monopole over GN 1 (finite ground joins the base too, unit-tested; its contact is refused, FND-240), an inverted-V apex, a tee's junction end and a passive TL port at a free end solve without it; the MPIE refuses the end feed instead and takes the interior one; `fnec converge` caveats each refined mesh. FND-311: a free-end TL/NT port its network drives (TL, NT, a chain) is caveated once by the port, not as a feed; an interior port, an NT with Y12 = 0, a chain without the feed and a grounded base are not; a feed on the port itself is caveated once, as a feed; `fnec converge` judges each mesh's own port (keep: every mesh, centre: 1× only) | FND-227, FND-230, FND-294, FND-311 |
 | `apps/nec-cli/tests/gpu_rerun_policy.rs` | 1 | FND-215 — no workspace member's `tests/` calls the adapter probe itself (only `gpu_concurrent_init.rs`, whose subject it is): GPU tests skip and re-run through `nec_accel::gpu_test`; the scan reads the members from the root manifest and refuses an empty or mis-rooted file set | FND-215 |
 | `apps/nec-cli/tests/refusal_remedy.rs` | 8 | FND-271 — a Hallén-only refusal names the MPIE the way each frontend reaches it; FND-276 — only for a deck the MPIE solves (end feed, feed between junctions, wire on the ground refused without it; a caveat drops the MPIE remedy for an end-fed deck) | — |
@@ -174,7 +175,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=971 --> **971** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=973 --> **973** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -199,7 +200,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=743 --> **743** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1721 --> **1721** = 743 unit + 971 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1723 --> **1723** = 743 unit + 973 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

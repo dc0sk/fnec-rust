@@ -226,7 +226,8 @@ silently. The worker reports a `mesh` field; the controller refuses a mismatch.
   on the same mesh; 6 → 7 % vs the MPIE, which does not move).
 - **nec2c on the same mesh stopped being the nearer answer** (FND-232). Where a gate
   compared with nec2c at the deck's own segment count, fnec now converges faster and
-  passes nec2c on the way: the off-centre feed (fnec 375.9 / 380.6 / 381.9, nec2c
+  passes nec2c on the way on these decks (on the plain centre-fed dipole nec2c stays
+  nearer at every mesh, FND-315): the off-centre feed (fnec 375.9 / 380.6 / 381.9, nec2c
   366.9 / 376.8 / 379.3 at 42 / 126 / 210), the stem-fed Y (both extrapolate to
   ≈ 20.5 − j1714). Those gates were re-pointed at nec2c on a finer mesh, the feed on
   the same point (segment k → 27k − 13). Changed tolerances, each with its measurement

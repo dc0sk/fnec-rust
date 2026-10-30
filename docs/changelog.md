@@ -184,6 +184,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   Every Hallén route prints it, through the same producer as FND-294's caveat.
   The port resolution is now one function (`tl::resolve_ports`) that the solve
   and the caveat share.
+- **Hallén's coarse-mesh accuracy on a dipole is measured and stated** (FND-315):
+  fnec converges to nec2c's limit (any offset under 0.1 % of |Z| on a 0.2 mm wire,
+  measured to 2561 segments; the MPIE joins it), but its reactance error on a
+  coarse mesh is 2.5–3× nec2c's, so it needs 3–4× the segments for nec2c's
+  accuracy. `cli-guide.md` and `4nec2-drop-in.md` say so, and a new gate,
+  `dipole_shared_limit.rs`, holds the shared limit against nec2c at 161 and 641
+  segments, where no gate held it better than X ± 8 Ω. No number changes.
 
 - **The GUI's sweep and the distributed worker check the frequencies they run,
   not the deck's `FR`** (FND-290, FND-210's class). Both asked the deck, whose
