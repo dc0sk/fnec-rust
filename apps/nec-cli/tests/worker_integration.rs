@@ -270,11 +270,23 @@ FR 0 1 0 0 14.2 0
 EN
 ";
 
-/// fnec's row on the two-card deck (the summed drive), Ω.
+/// fnec's row on the two-card deck, Ω. NOT a discriminator between drive
+/// semantics: Z is drive-independent, so it reads the same whether the solve
+/// sums the cards or applies the last (FND-305) — the current is what differs.
 const TWO_EX_R: f64 = 78.955035;
 const TWO_EX_X: f64 = 43.483530;
 
+/// nec2c 1.3.1's |I| on this deck (`t_two` = `t_half`: the last card, 0.5 V,
+/// drives the segment): |4.7331e-3 − j2.7462e-3| A.
+const NEC2C_TWO_I_MAG: f64 = 5.4722e-3;
+
 fn worker_z(deck: &str, task_id: &str) -> (f64, f64) {
+    let (z, _) = worker_z_and_i(deck, task_id);
+    z
+}
+
+/// The worker's feed impedance and current magnitude.
+fn worker_z_and_i(deck: &str, task_id: &str) -> ((f64, f64), f64) {
     let fnec = env!("CARGO_BIN_EXE_fnec");
     let mut worker = nec_worker::LocalWorkerHandle::spawn(fnec).expect("spawn fnec worker");
     let task = nec_worker::TaskMessage {
@@ -290,10 +302,15 @@ fn worker_z(deck: &str, task_id: &str) -> (f64, f64) {
     };
     let result = worker.dispatch(&task).expect("dispatch should succeed");
     worker.shutdown().ok();
-    let nec_worker::TaskResult::Ok { impedance, .. } = result else {
+    let nec_worker::TaskResult::Ok {
+        impedance,
+        feedpoint_current_mag,
+        ..
+    } = result
+    else {
         panic!("{task_id}: the worker did not solve: {result:?}")
     };
-    (impedance.re_ohm, impedance.im_ohm)
+    ((impedance.re_ohm, impedance.im_ohm), feedpoint_current_mag)
 }
 
 /// The main command's first feedpoint row, from its JSON record.
@@ -326,22 +343,34 @@ fn assert_same_z(what: &str, worker: (f64, f64), cli: (f64, f64)) {
 /// FND-297 d: the worker's feed row is priced from the drive the solve applied,
 /// through `nec_solver::feedpoint_drive_voltage` — the seam the CLI, the GUI and
 /// the bindings use. The worker read V from the EX card instead, which differs only
-/// when two cards share a segment: the solve sums them (1.5 V), and the worker
+/// when two cards share a segment: the solve summed them (1.5 V), and the worker
 /// divided one card's 1 V by the summed drive's current, 52.64 + j28.99 Ω where
 /// the CLI says 78.96 + j43.48 Ω.
 ///
-/// This pins fnec's **summing** semantics, not nec2c's: nec2c applies the last card
-/// (0.5 V) and prices each row V_card/I — 158.07 + j91.71 and 79.03 + j45.86 Ω on
-/// this deck (nec2c 1.3.1; fnec's one-card row is 78.96 + j43.48). That is FND-305; its fix re-points this test.
+/// FND-305: the drive is NEC-2's — the last type-0 card (0.5 V), not the sum
+/// (1.5 V) this test pinned before. The discriminator is the current: half the
+/// one-card (1 V) deck's to 1e-9, and nec2c's |I| within 3 % (fnec's |Z| is 1.4 %
+/// from nec2c's 79.03 + j45.86); summing gives a ratio of 1.5.
 #[test]
 fn a_worker_feed_row_is_priced_from_the_drive_the_solve_applied() {
-    let worker = worker_z(TWO_EX_ON_ONE_SEGMENT, "two-ex");
+    let (worker, i_two) = worker_z_and_i(TWO_EX_ON_ONE_SEGMENT, "two-ex");
     let cli = cli_z(TWO_EX_ON_ONE_SEGMENT, "fnd297d-two-ex.nec");
     assert_same_z("two EX on one segment", worker, cli);
-    // Absolute, so a seam that moved both frontends at once still fails here.
+    // Not a discriminator (see `TWO_EX_R`); kept so a seam that moved both
+    // frontends' impedance at once still fails here.
     assert!(
         (worker.0 - TWO_EX_R).abs() < 0.01 && (worker.1 - TWO_EX_X).abs() < 0.01,
         "two EX on one segment: {worker:?}"
+    );
+    let (_, i_one) = worker_z_and_i(ONE_EX, "one-ex-i");
+    assert!(
+        (i_two / i_one - 0.5).abs() < 1e-9,
+        "the last card (0.5 V) drives the segment: |I| ratio {} to the 1 V deck",
+        i_two / i_one
+    );
+    assert!(
+        ((i_two - NEC2C_TWO_I_MAG) / NEC2C_TWO_I_MAG).abs() < 0.03,
+        "|I| {i_two} against nec2c {NEC2C_TWO_I_MAG}"
     );
 
     // Negative control: one card, where the card's V and the applied drive agree.

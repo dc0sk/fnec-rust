@@ -67,7 +67,7 @@ resolved list, not over the deck.
 | `z_im` | `number` | Ω | Imaginary part of feedpoint impedance (reactance). |
 | `z_abs` | `number` | Ω | Magnitude of feedpoint impedance: `sqrt(z_re² + z_im²)`. |
 | `z_arg_deg` | `number` | ° | Phase angle of feedpoint impedance: `atan2(z_im, z_re)` in degrees. |
-| `feedpoints` | `object[]` | — | **Every** feedpoint of the point, in the text report's `FEEDPOINTS` order, each with `tag`, `seg`, `z_re`, `z_im`, `z_abs`, `z_arg_deg` as above. Always present — one element for a one-source deck — so a consumer never branches on its presence. The top-level fields are its first element, digit for digit (FND-291). |
+| `feedpoints` | `object[]` | — | **Every** feedpoint of the point, in the text report's `FEEDPOINTS` order, each with `tag`, `seg`, `z_re`, `z_im`, `z_abs`, `z_arg_deg` as above — one element per driven segment: a segment two `EX` cards name is one element, driven as NEC-2 drives it, and the overridden card's warning is on stderr with the others (FND-305). Always present — one element for a one-source deck — so a consumer never branches on its presence. The top-level fields are its first element, digit for digit (FND-291). |
 | `caveat` | `string` | — | **Present only** when the point came from an unvalidated solver (`--solver pulse`/`continuity`, which need `--experimental-solver`; FND-080). Says why the numbers are not a result. Absent for every validated solver, so their records are unchanged. |
 
 All numeric fields are IEEE 754 double-precision floating-point values.
