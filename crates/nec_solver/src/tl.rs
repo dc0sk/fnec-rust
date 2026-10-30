@@ -60,16 +60,8 @@ pub(crate) fn tl_two_port(
     segs: &[Segment],
     freq_hz: f64,
 ) -> Result<(TwoPort, Vec<String>), String> {
-    let name = format!("TL {} {} {} {}", tl.tag1, tl.segment1, tl.tag2, tl.segment2);
-    let mut notes = Vec::new();
-    let mut end = |tag: u32, seg: u32| -> Result<usize, String> {
-        let (idx, _, note) = find_segment_index(segs, tag, seg)
-            .ok_or_else(|| crate::geometry::missing_reference(&name, tag, seg, segs))?;
-        notes.extend(note);
-        Ok(idx)
-    };
-    let a = end(tl.tag1, tl.segment1)?;
-    let b = end(tl.tag2, tl.segment2)?;
+    let name = tl_name(tl);
+    let (a, b, notes) = resolve_ports(&name, (tl.tag1, tl.segment1), (tl.tag2, tl.segment2), segs)?;
     if tl.z0 == 0.0 || !tl.z0.is_finite() {
         return Err(format!(
             "{name}: characteristic impedance must be nonzero, got {}",
@@ -121,6 +113,32 @@ pub(crate) fn tl_two_port(
         },
         notes,
     ))
+}
+
+/// How a `TL` card names itself in a refusal.
+pub(crate) fn tl_name(tl: &TlCard) -> String {
+    format!("TL {} {} {} {}", tl.tag1, tl.segment1, tl.tag2, tl.segment2)
+}
+
+/// A network card's two port segments, and the notes the segment-0 shorthand
+/// raises: the one resolution the solve prices and the free-end caveat reads
+/// ([`crate::network::port_segments`], FND-311). `name` heads a refusal.
+pub(crate) fn resolve_ports(
+    name: &str,
+    (tag1, seg1): (u32, u32),
+    (tag2, seg2): (u32, u32),
+    segs: &[Segment],
+) -> Result<(usize, usize, Vec<String>), String> {
+    let mut notes = Vec::new();
+    let mut end = |tag: u32, seg: u32| -> Result<usize, String> {
+        let (idx, _, note) = find_segment_index(segs, tag, seg)
+            .ok_or_else(|| crate::geometry::missing_reference(name, tag, seg, segs))?;
+        notes.extend(note);
+        Ok(idx)
+    };
+    let a = end(tag1, seg1)?;
+    let b = end(tag2, seg2)?;
+    Ok((a, b, notes))
 }
 
 pub(crate) fn find_segment_index(

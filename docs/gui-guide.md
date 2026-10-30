@@ -105,7 +105,8 @@ in live** — the chart and table fill as each frequency solves.
 
 The range replaces the deck's `FR` card, and expands as `fnec --sweep-config`
 expands one (`start + i·step` up to the end, which is included when it lies on
-the grid; Start = End is a single point; at most 100 000 points). The deck is
+the grid; Start = End is a single point; at most 100 000 points; a step below the
+range's resolution, about 1.8e-12 MHz at 1000 MHz, is refused). The deck is
 checked at the swept frequencies before the first one solves — a deck whose own
 `FR` is unusable still sweeps, and a transmission line that cannot be built at one
 swept frequency is refused up front, naming that frequency.

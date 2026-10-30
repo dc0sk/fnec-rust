@@ -17,6 +17,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **`--output-format json` carries `EX` I4's input-impedance table** as each
+  record's `input_impedance` object (FND-314): the feedpoint it follows
+  (`feedpoint_index` into `feedpoints`, `source_tag`, `source_seg`,
+  `source_abs_seg`), `normalization_ohms`, `normalized_to` (`"F3"` or `"MAX"`)
+  and the normalized `zn_re`, `zn_im`, `zn_abs`. Present exactly when the text
+  report prints the table, from the same decision, on both the local and the
+  `--hosts` route; a sweep that lost a point carries it on no record and says
+  so on stderr. The warning that JSON had no form for it is gone. An added
+  field, so v1 consumers are unaffected.
+
 - **`fnec converge`, the convergence-study helper** (GAP-012, BL-IMPR-017).
   It solves a deck as written and meshed 3× and 9× finer (`--factors`, odd and
   geometric: `1,3,9` by default, `1,3,9,27` allowed) and reports, for every
@@ -82,7 +92,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   point. On `EX 0 1 6 11 1 0 50`, `FR 0 2 0 0 29.9 1` (a 5 m dipole): nec2c 78.614 +
   j40.951 Ω → 1.5723 + j0.81903, fnec within 0.6 % of |Z|. The report's
   `FORMAT_VERSION` stays 1: the section is additive. `--output-format json`
-  warns that it has no JSON form yet, `--output-format nec2d` refuses the deck,
+  carries it per record (FND-314, above), `--output-format nec2d` refuses the deck,
   `fnec converge` notes the request as dropped, and the GUI and `fnec_py` do not
   carry it. The local and distributed runs now print `SWEEP_POINTS` (unchanged,
   to the byte) and the new section through one renderer,
@@ -155,6 +165,33 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   sommerfeld` declined such a deck as multi-feed and `--hosts` refused it, while
   the report showed one feedpoint. The worker's feed row prices the drive the
   solve applies (FND-297 d), which is now the last card's.
+- **A sweep range whose step is below its resolution is refused** in
+  `--sweep-config` and the GUI's sweep tab (FND-316). Below 8ε·max(|start|, |end|)
+  — 1.8e-12 MHz at 1000 MHz — the count rule's rounding term exceeds half a
+  step, and `1000 … 1000.000000000001 by 1e-13` counted 20 points, with
+  duplicate frequencies, for 11. The new `RangeError::StepBelowResolution`
+  names the step and the resolution. `FR` cards are unchanged: their count is
+  written on the card, and nec2c runs a zero or tiny step as repeated points.
+- **A `TL`/`NT` port on a free-end segment that its network drives is caveated**
+  as a free-end feed (FND-311): an end-fed wire through a feedline or a matching
+  network solved with exit 0 and no word, while the same wire fed directly on its
+  end segment warns (FND-294). nec2c's impedance at such a port equals the direct
+  end feed's to four digits at every mesh (a 10 m wire at 14.2 MHz, 11 → 297
+  segments), and the source behind an `NT` diverges in both codes (fnec 673 −
+  j1362 → 55 − j7549 Ω, nec2c 1011 − j1525 → 69 − j8376 Ω). A port is judged when
+  its network component — the ports joined by a `TL`, or an `NT` with `Y12 ≠ 0` —
+  holds a feed; a passive port, whose current falls as the mesh refines, is not.
+  Every Hallén route prints it, through the same producer as FND-294's caveat.
+  The port resolution is now one function (`tl::resolve_ports`) that the solve
+  and the caveat share.
+- **Hallén's coarse-mesh accuracy on a dipole is measured and stated** (FND-315):
+  fnec converges to nec2c's limit (any offset under 0.1 % of |Z| on a 0.2 mm wire,
+  measured to 2561 segments; the MPIE joins it), but its reactance error on a
+  coarse mesh is 2.5–3× nec2c's, so it needs 3–4× the segments for nec2c's
+  accuracy. `cli-guide.md` and `4nec2-drop-in.md` say so, and a new gate,
+  `dipole_shared_limit.rs`, holds the shared limit against nec2c at 161 and 641
+  segments, where no gate held it better than X ± 8 Ω. No number changes.
+
 - **The GUI's sweep and the distributed worker check the frequencies they run,
   not the deck's `FR`** (FND-290, FND-210's class). Both asked the deck, whose
   `FR` the sweep range and the wire's `frequency_hz` replace: a deck with
@@ -287,7 +324,8 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   per point and per sweep, `fnec converge` per mesh, `--hosts`, the GUI and fnec_py,
   through the one producer they share (`frequency_independent_caveats`). A caveat,
   not a refusal: nec2c answers these decks and end-fed antennas are common. Feeds
-  only (`EX` 0, 4, 5); a `TL`/`NT` port there is not judged. A base-fed monopole
+  are `EX` 0, 4, 5; a `TL`/`NT` port there is judged when its network drives it
+  (FND-311, below). A base-fed monopole
   over `GN 1` is not caveated — its end joins the ground (as it would over `GN 0`
   or `2`, where the contact is refused, FND-240). "At a free
   end" is one predicate, `nec_solver::geometry::at_free_end`, on the refined Hallén
@@ -417,7 +455,9 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   PR. `scripts/check-findings-ledger.py` fails on a cited commit that is not an
   ancestor of HEAD unless `(#N)` follows it, and refuses a shallow clone rather
   than pass it; its self-test, `scripts/test-check-findings-ledger.py`, runs in
-  `check-all.sh` and CI.
+  `check-all.sh` and CI. A `fixed` row must also cite a PR number: a commit
+  hash alone no longer satisfies it, since a hash on `main` can be the base the
+  fix was measured on (FND-310's row passed on one).
 
 ## [0.25.0] — 2026-10-22 — Where wires meet
 

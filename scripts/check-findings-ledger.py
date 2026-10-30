@@ -149,9 +149,14 @@ def main() -> int:
                 f"{LEDGER}:{lineno}: {fid} is deferred but names no owner "
                 f"(evidence column must contain 'owner:')"
             )
-        if state == "fixed" and not re.search(r"#\d+|[0-9a-f]{7,40}", evidence):
+        # A PR number, not any hex token: a hash on main may be the base a fix
+        # was measured on (FND-310's row passed on "main a6b7ffb"), and a branch
+        # hash dies at the squash (FND-317). Still shape-only: "see #N" passes.
+        if state == "fixed" and not re.search(r"#\d+", evidence):
             problems.append(
-                f"{LEDGER}:{lineno}: {fid} is fixed but cites no PR (#N) or commit"
+                f"{LEDGER}:{lineno}: {fid} is fixed but cites no PR (#N); a commit "
+                f"hash is not a citation of the fix (squash-merge, FND-317), and a "
+                f"hash on main may be a measurement base (FND-310)"
             )
         if state == "rejected" and len(evidence) < 20:
             problems.append(

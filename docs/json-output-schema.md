@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/json-output-schema.md
 status: living
-last_updated: 2026-09-26
+last_updated: 2026-10-29
 ---
 
 # fnec JSON Output Schema (v1)
@@ -69,6 +69,7 @@ resolved list, not over the deck.
 | `z_arg_deg` | `number` | ° | Phase angle of feedpoint impedance: `atan2(z_im, z_re)` in degrees. |
 | `feedpoints` | `object[]` | — | **Every** feedpoint of the point, in the text report's `FEEDPOINTS` order, each with `tag`, `seg`, `z_re`, `z_im`, `z_abs`, `z_arg_deg` as above — one element per driven segment: a segment two `EX` cards name is one element, driven as NEC-2 drives it, and the overridden card's warning is on stderr with the others (FND-305). Always present — one element for a one-source deck — so a consumer never branches on its presence. The top-level fields are its first element, digit for digit (FND-291). |
 | `caveat` | `string` | — | **Present only** when the point came from an unvalidated solver (`--solver pulse`/`continuity`, which need `--experimental-solver`; FND-080). Says why the numbers are not a result. Absent for every validated solver, so their records are unchanged. |
+| `input_impedance` | `object` | — | **Present only** when the text report would print its `INPUT_IMPEDANCE` table (FND-314): the last voltage-source `EX` card has I4's units digit 1, two or more points solved, and none failed. Then on **every** record, last in it. Its presence is the information: a sweep that lost a point carries it on no record and warns on stderr. See below. |
 
 All numeric fields are IEEE 754 double-precision floating-point values.
 
@@ -100,12 +101,37 @@ one-element `feedpoints`.
 
 The text report's `INPUT_IMPEDANCE` section — NEC-2's input impedance over a
 sweep, normalized to `EX` F3 or to the sweep's largest |Z|, asked for by a
-voltage source's I4 units digit 1 (FND-309) — has **no JSON form yet**. With
-`--output-format json` and two or more frequencies, `fnec` writes the records
-as above and warns on stderr that the table is not written, naming
-`--output-format text` as the remedy. Every point's impedance is in the
-records; the normalization is the one thing missing. A JSON field for it is a
-tracked follow-up (FND-314).
+voltage source's I4 units digit 1 (FND-309) — is each record's
+`input_impedance` object in JSON (FND-314). One decision serves both: the same
+source, factor and omissions as the text table.
+
+Two wires of 81 segments, `EX 0 1 41 0 1 0 0` then `EX 0 2 41 1 1 0 50`,
+`FR 0 2 0 0 29.9 1` — the table follows the second card's feedpoint. The
+29.9 MHz record's object (digits shortened):
+
+```json
+"input_impedance": {
+  "feedpoint_index": 1, "source_tag": 2, "source_seg": 41, "source_abs_seg": 122,
+  "normalization_ohms": 50, "normalized_to": "F3",
+  "zn_re": 0.50709, "zn_im": -1.99863, "zn_abs": 2.06196
+}
+```
+
+| Field | Type | Description |
+|:------|:-----|:------------|
+| `feedpoint_index` | `integer` | The row the table follows, 0-based into the record's `feedpoints`: nec2c's source, the last `EX 5`, else the last `EX 0` — not necessarily the first feedpoint the top level repeats. Its Z is `feedpoints[feedpoint_index]`. It is the row on the source's segment: the rows are one per driven segment (FND-305), so `source_abs_seg` names it too. |
+| `source_tag`, `source_seg` | `integer` | That feedpoint's tag and segment within the tag, as in `feedpoints`. |
+| `source_abs_seg` | `integer` | Its absolute segment number, from 1 — the text header's `SOURCE_SEGMENT`, nec2c's SOURCE SEGMENT No. |
+| `normalization_ohms` | `number` | The divisor, Ω: the card's F3 when F3 > 0, else the sweep's largest \|Z\| of that feedpoint. The same on every record. |
+| `normalized_to` | `string` | `"F3"` or `"MAX"`, which of the two. |
+| `zn_re`, `zn_im` | `number` | That feedpoint's Z divided by `normalization_ohms`, exactly. |
+| `zn_abs` | `number` | Their magnitude. The phase is not normalized: it is the feedpoint's `z_arg_deg`. |
+
+The sweep-wide fields repeat on every record so each stays self-describing; a
+trailing summary element would change the array's shape. Absent on a single
+point (nec2c prints no table for one frequency) and on a sweep in which any
+point failed (a largest-\|Z\| factor over the points that solved is not NEC-2's),
+which warns on stderr.
 
 ### Absence of feedpoint data
 
