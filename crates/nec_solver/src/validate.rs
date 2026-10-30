@@ -978,8 +978,8 @@ pub fn is_negative_resistance_message(message: &str) -> bool {
 /// failed solve.
 ///
 /// Measured too, and not judged by it for that reason ([`ResidualKind`]): a
-/// GPU-resident f32 solve reads 1.43e-5 on the yagi at 3× (the device gates its
-/// own at 1e-4), and the sinusoidal basis 6.6e-4 on the corpus dipole (a
+/// GPU-resident solve's currents read 1.46e-5 against the f64 problem on the yagi
+/// at 3× (judged at [`DEVICE_REL_RESIDUAL_MAX`]), and the sinusoidal basis 6.6e-4 on the corpus dipole (a
 /// projection residual, gated by `--sin-fallback-rel-max`).
 ///
 /// Overridden by `--hallen-residual-caveat` (CLI) and
@@ -1000,11 +1000,12 @@ pub enum ResidualKind {
     /// included): plain, conductor paths, networks, and the sinusoidal basis's
     /// fallback to Hallén. Judged at [`HALLEN_REL_RESIDUAL_CAVEAT`].
     HallenF64,
-    /// The GPU-resident f32 solve of the device's own matrix (FND-307). The
-    /// device judges it at its own bound (1e-4, `GPU_SOLVE_MAX_REL_RESIDUAL`) and
-    /// declines to the f64 CPU solve above it, which is then judged. Correct f32
-    /// solves sit between 1e-5 and 1e-4 (the corpus yagi at 3×: 1.43e-5).
-    DeviceF32,
+    /// The GPU-resident solve's currents (an f32 fill and solve on the device)
+    /// against the f64 problem, the CPU's f64 fill (FND-307). Judged at
+    /// [`DEVICE_REL_RESIDUAL_MAX`], above which the point declines to the routed
+    /// f64 CPU solve, which is then judged; not by the Hallén caveat, which every
+    /// large healthy device solve exceeds (1.3e-5 at 1605 segments).
+    DeviceSolveF64,
     /// The sinusoidal basis: a Galerkin projection tested at collocation rows it
     /// does not satisfy (~6.6e-4 on the corpus dipole), judged by
     /// `--sin-fallback-rel-max`.
@@ -1043,6 +1044,66 @@ pub fn parse_residual_caveat_threshold(raw: &str) -> Option<f64> {
     raw.parse::<f64>()
         .ok()
         .filter(|v| v.is_finite() && *v > 0.0)
+}
+
+/// The relative residual, against the f64 problem, above which a GPU-resident
+/// solve's currents are declined to the routed f64 CPU solve (FND-307).
+///
+/// The device fills and solves in f32 and judges its own answer against its own
+/// fill; that check is blind to a defect in the fill itself (a planted 1e-4
+/// diagonal error read 8e-9 there). This one is against the CPU's f64 fill, on
+/// the CLI and the worker alike. Measured 2026-10-30 on an RTX 2080 Ti, 14.2
+/// MHz, 1 mm wire, segments counted after the free-end refinement:
+///
+/// | deck | N | residual vs f64 | ‖ΔZ‖/‖Z‖ vs CPU |
+/// |---|--:|--:|--:|
+/// | dipole | 205 | 3.14e-6 | 9.3e-7 |
+/// | dipole | 805 | 8.42e-6 | 2.2e-6 |
+/// | dipole | 1605 | 1.28e-5 | 1.13e-5 |
+/// | dipole | 3205 | 2.16e-5 | 1.6e-5 |
+/// | dipole | 6405 | 3.11e-5 | — |
+/// | yagi 5-el, 3× | 785 | 1.46e-5 | 1.02e-5 |
+///
+/// It tracks the impedance error within 1–3× and grows about as N^0.5, so the
+/// margin is 3.2× at 6405 and about 2.5× extrapolated to `MAX_SEGMENTS`. A
+/// healthy decline at a size not in this table means "re-measure the bound",
+/// not "the kernel broke". What it catches, on the 805-segment dipole with the
+/// device's matrix perturbed: diagonal × (1 + 1e-4) reads 3.4e-4, one row × 1.1
+/// reads 4.1e-3 (a row sample would have read 6.5e-6 while Z moved 8 %).
+///
+/// The same value as `nec_accel`'s own bound, and a different quantity: that is
+/// the residual of the device's column-scaled f32 system. A decline costs one
+/// CPU solve; under `--exec hybrid` it also ends the GPU lane for the rest of the
+/// sweep. Overridden by [`DEVICE_REL_RESIDUAL_MAX_ENV`]; see
+/// [`device_residual_max`].
+pub const DEVICE_REL_RESIDUAL_MAX: f64 = 1e-4;
+
+/// The environment override of [`DEVICE_REL_RESIDUAL_MAX`], read by the CLI and
+/// the worker, so the decline can be shown to fire through each.
+pub const DEVICE_REL_RESIDUAL_MAX_ENV: &str = "FNEC_DEVICE_REL_RESIDUAL_MAX";
+
+/// [`DEVICE_REL_RESIDUAL_MAX_ENV`] when set (a positive number, else `Err`), else
+/// [`DEVICE_REL_RESIDUAL_MAX`].
+pub fn device_residual_max() -> Result<f64, String> {
+    match std::env::var(DEVICE_REL_RESIDUAL_MAX_ENV) {
+        Ok(raw) => parse_residual_caveat_threshold(&raw).ok_or_else(|| {
+            format!("invalid {DEVICE_REL_RESIDUAL_MAX_ENV}='{raw}' (expected: positive number)")
+        }),
+        Err(_) => Ok(DEVICE_REL_RESIDUAL_MAX),
+    }
+}
+
+/// The warning that declines a GPU-resident solve whose relative residual `rel`
+/// against the f64 problem is above `max` ([`ResidualKind::DeviceSolveF64`]), or
+/// `None`. `NaN` declines. The caller then runs the routed f64 CPU solve.
+pub fn device_residual_decline(rel: f64, max: f64) -> Option<String> {
+    (rel.is_nan() || rel > max).then(|| {
+        format!(
+            "--exec gpu: the device's currents miss the f64 problem (relative residual \
+             {rel:.3e} > {max:.1e}, FND-307); solving this point on the CPU in f64 — if it \
+             recurs on healthy decks, the bound needs re-measuring at this size"
+        )
+    })
 }
 
 /// The caveat for an f64 Hallén solve ([`ResidualKind::HallenF64`]) whose
@@ -4014,9 +4075,26 @@ mod residual_caveat_tests {
     #[test]
     fn only_an_f64_hallen_residual_is_judged() {
         assert!(ResidualKind::HallenF64.judged_by_hallen_caveat());
-        assert!(!ResidualKind::DeviceF32.judged_by_hallen_caveat());
+        assert!(!ResidualKind::DeviceSolveF64.judged_by_hallen_caveat());
         assert!(!ResidualKind::SinusoidalProjection.judged_by_hallen_caveat());
         assert!(!ResidualKind::Pulse.judged_by_hallen_caveat());
+    }
+
+    /// FND-307: the decline fires above the bound and on NaN, not at or below it.
+    #[test]
+    fn a_device_residual_above_the_bound_declines() {
+        let w = device_residual_decline(3.4e-4, DEVICE_REL_RESIDUAL_MAX).expect("declines");
+        assert!(w.contains("3.400e-4") && w.contains("FND-307"), "{w}");
+        assert!(device_residual_decline(f64::NAN, DEVICE_REL_RESIDUAL_MAX).is_some());
+        assert_eq!(
+            device_residual_decline(DEVICE_REL_RESIDUAL_MAX, DEVICE_REL_RESIDUAL_MAX),
+            None
+        );
+        assert_eq!(
+            device_residual_decline(3.11e-5, DEVICE_REL_RESIDUAL_MAX),
+            None
+        );
+        assert!(device_residual_decline(2e-30, 1e-30).is_some());
     }
 
     #[test]

@@ -200,17 +200,25 @@ impl std::fmt::Debug for GpuMiss {
     }
 }
 
+/// The phrase of `nec_solver::validate::device_residual_decline`'s warning.
+pub const DEVICE_RESIDUAL_DECLINE: &str = "the device's currents miss the f64 problem";
+
 pub fn classify_gpu_stderr(stderr: &str) -> GpuRun {
     let fallbacks: Vec<&str> = stderr
         .lines()
         .filter(|l| {
             l.contains("solve_hallen_gpu_resident:")
-                || l.contains("falling back to CPU Z-matrix fill")
+                || l.contains(DEVICE_RESIDUAL_DECLINE)
                 || l.contains("falling back to CPU RP")
         })
         .collect();
-    let deterministic =
-        |l: &&str| l.contains("storage binding holds") || l.contains("did not converge");
+    // A device answer outside the f64 residual bound declines the same way every
+    // run (FND-307): deterministic, not worth a re-run.
+    let deterministic = |l: &&str| {
+        l.contains("storage binding holds")
+            || l.contains("did not converge")
+            || l.contains(DEVICE_RESIDUAL_DECLINE)
+    };
     if let Some(l) = fallbacks.iter().find(|l| !deterministic(l)) {
         return GpuRun::Missed(l.to_string());
     }

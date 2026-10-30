@@ -321,11 +321,11 @@ fn a_point_the_device_does_not_solve_is_filled_in_f64() {
     }
 }
 
-/// The record's controls: a point the device takes is filled and solved there
-/// (`fill_exec=gpu solve_exec=gpu`); a resident solve below the 128-segment fill
-/// floor reads `fill_exec=cpu solve_exec=gpu`, because the device re-fills from
-/// raw segment inputs for its own solve and the host matrix serves only the
-/// residual check; `--exec cpu` and the MPIE fill on the CPU.
+/// The record's controls: a point the device takes reads `fill_exec=cpu
+/// solve_exec=gpu` at every size — the device fills its own f32 matrix for its
+/// solve, and the host matrix, the one its currents are checked against, is the
+/// CPU's f64 fill (FND-307; at 128 segments or more it read `fill_exec=gpu`, the
+/// device's f32 fill); `--exec cpu` and the MPIE fill on the CPU.
 ///
 /// The device half needs a hardware adapter, so it is dormant in CI (which has
 /// none) and runs on a GPU host; it says SKIP when it does not run.
@@ -340,7 +340,7 @@ fn the_record_names_where_the_matrix_was_filled() {
 
     let small =
         "CE\nGW 1 51 0 0 -5.282 0 0 5.282 .001\nGE 0\nEX 0 1 26 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
-    for (name, deck, fill) in [("big", big.as_str(), "gpu"), ("small", small, "cpu")] {
+    for (name, deck, fill) in [("big", big.as_str(), "cpu"), ("small", small, "cpu")] {
         let attempt = gpu_attempt(name, || {
             let (_, stderr) = run_deck(&format!("{name}-gpu"), deck, &["--exec", "gpu"]);
             match classify_gpu_stderr(&stderr) {

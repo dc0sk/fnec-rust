@@ -35,6 +35,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/current_source_junction.rs` | 2 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
 | `apps/nec-cli/tests/deck_reference_resolver.rs` | 2 | A deck reference `(tag, segment)` becomes a segment in one place: `nec_solver::find_deck_segment`; the scan refuses an inline `tag_index ==` lookup in any product source (self-checked on a planted copy). | FND-135, FND-227 |
 | `apps/nec-cli/tests/deck_validator.rs` | 5 | Deck validator **refuses** a missing `EX` (error-level, FND-145) on every advertised `--solver` mode and output format; silent on well-formed decks | FR-009, EP-4 |
+| `apps/nec-cli/tests/device_residual_f64.rs` | 3 | FND-307 — a GPU-resident solve's printed `rel_res` is its currents against the CPU's f64 fill (recomputed by the test from the production device solve, within 10 %); `FNEC_DEVICE_REL_RESIDUAL_MAX=1e-30` declines the point with the warning, `solve_exec=cpu` and a report byte-identical to `--exec cpu`; the override at 1 stays on the device. Needs a hardware adapter (SKIP otherwise). | FND-307 |
 | `apps/nec-cli/tests/dipole_shared_limit.rs` | 2 | FND-315 — fnec's dipole converges to nec2c's limit: the 5 m, 0.2 mm dipole at 28/29/30 MHz, `--exec cpu`, against nec2c 1.3.1 EK's stored digits — Hallén at 641 segments within 0.20 Ω (X) / 0.06 Ω (R), approaching from below (ΔX(161) < ΔX(641) < 0) and still contracting (the 641 gap ≤ 0.45× the 161 gap); the MPIE at 641 within 0.10 Ω and from below. A +0.2 Ω and a −0.06 Ω shift of X each fail it | FND-315 |
 | `apps/nec-cli/tests/end_segment_source.rs` | 17 | FND-227 / FND-230 — a source, load or port on the segment at a free wire end: solved on every Hallén route and exec, within 2.5 % / 2 % of the wire meshed 3× finer, an end-segment load seen (ΔZ within 15 % of nec2c's), segment 0 still unnamed, a fat end judged by its deck length, the MPIE's refusal kept. FND-294: a feed (first or last segment, voltage or current source) at a free end solves with its caveat, once; an interior feed, a centre-fed dipole, a base-fed monopole over GN 1 (finite ground joins the base too, unit-tested; its contact is refused, FND-240), an inverted-V apex, a tee's junction end and a passive TL port at a free end solve without it; the MPIE refuses the end feed instead and takes the interior one; `fnec converge` caveats each refined mesh. FND-311: a free-end TL/NT port its network drives (TL, NT, a chain) is caveated once by the port, not as a feed; an interior port, an NT with Y12 = 0, a chain without the feed and a grounded base are not; a feed on the port itself is caveated once, as a feed; `fnec converge` judges each mesh's own port (keep: every mesh, centre: 1× only) | FND-227, FND-230, FND-294, FND-311 |
 | `apps/nec-cli/tests/gpu_rerun_policy.rs` | 1 | FND-215 — no workspace member's `tests/` calls the adapter probe itself (only `gpu_concurrent_init.rs`, whose subject it is): GPU tests skip and re-run through `nec_accel::gpu_test`; the scan reads the members from the root manifest and refuses an empty or mis-rooted file set | FND-215 |
@@ -110,6 +111,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/traceability.rs` | 1 | G2 — machine-enforced requirements traceability (review-260821). | — |
 | `apps/nec-cli/tests/two_sources_one_segment_nec2c.rs` | 11 | FND-305 — two `EX` cards on one segment drive it as nec2c 1.3.1 does: the last type-0 card (one FEEDPOINTS row, V 0.5, \|I\| and Z against nec2c `t_half`, a warning per overridden card, CURRENTS byte-identical to the one-card deck, a tag-0 spelling resolved first), type-5 cards add (\|I\| against nec2c `t_ex0_ex5`); INPUT POWER and gain equal the one-card deck's (nec2c's own sum one row per card and are not the reference); every route (image, paths, graph, MPIE, sinusoidal) equals its one-card twin; the Sommerfeld correction still applies; a TL/NT port on a doubly-fed segment is refused (controls: nec2c `half_tl2`, a port elsewhere); EX 4 refusals and two-segment decks unchanged; FND-309's print finds its source by segment | FND-305 |
 | `apps/nec-cli/tests/worker_deadline.rs` | 2 | FND-101 — a worker that accepts a task and never answers must not wedge the run. | FND-101 |
+| `apps/nec-cli/tests/worker_device_residual.rs` | 1 | FND-307 across a real process boundary: a spawned worker checks its GPU-resident currents against the f64 problem and, with `FNEC_DEVICE_REL_RESIDUAL_MAX=1e-30`, declines to the CPU (`exec_used: cpu`) with the warning; the bound at 1 is the control (no decline). | FND-307 |
 | `apps/nec-cli/tests/worker_gpu_exec.rs` | 1 | Distributed GPU dispatch through worker pool (mixed gpu/cpu) | PH7-CHK-004 |
 | `apps/nec-cli/tests/worker_infinite_vswr.rs` | 2 | FND-117 — one unusable result must not destroy the worker pool. | FND-117 |
 | `apps/nec-cli/tests/worker_residual_caveat.rs` | 1 | FND-302 across a real process boundary: `fnec worker --stdio`, inheriting `FNEC_HALLEN_REL_RESIDUAL_CAVEAT=1e-30`, sends the caveat in its `warnings`; unset, it does not (alone in its binary: the variable is process-wide) | FND-302 |
@@ -176,7 +178,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=975 --> **975** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=979 --> **979** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -187,7 +189,7 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 329 | residual caveat threshold, the `ResidualKind` predicate's every arm and the shared NaN-is-worst reduction (FND-302), convergence (the settle rule), refine (the finer mesh's map), lnetwork (L-network matching, with a proptest that every network presents its target), loads, corner term, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
+| `nec_solver` | 330 | residual caveat threshold, the `ResidualKind` predicate's every arm and the shared NaN-is-worst reduction (FND-302), convergence (the settle rule), refine (the finer mesh's map), lnetwork (L-network matching, with a proptest that every network presents its target), loads, corner term, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
 | `nec_worker` | 100 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 103 | the FND-302 caveat firing through the single solve and the sweep stream, app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 58 | main, match_cmd (impedance spellings, text and JSON blocks), exec_profile, kernel (the PAR-011 kernel path, CRLF and warnings, its failure), sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
@@ -197,11 +199,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 8 | lib 7, constants 1 (μ0 ε0 c² = 1, FND-297 b) |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=743 --> **743** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=744 --> **744** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1725 --> **1725** = 743 unit + 975 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1730 --> **1730** = 744 unit + 979 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
