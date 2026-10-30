@@ -3791,6 +3791,32 @@ fn a_one_point_gui_sweep_is_allowed_in_the_tab_and_the_job() {
     .is_err());
 }
 
+/// FND-316: a step below the range's resolution is refused by name in both the
+/// tab and the job, which share one message.
+#[test]
+fn a_gui_sweep_step_below_the_resolution_is_refused_in_the_tab_and_the_job() {
+    use nec_gui::solve::{SolverKind, SweepJob};
+    let mut st = AppState::default();
+    st.sweep_start = "1000".into();
+    st.sweep_end = "1000.000000000001".into();
+    st.sweep_step = "1e-13".into();
+    let err = st.sweep_params().expect_err("refused in the tab");
+    assert!(err.contains("below the resolution"), "{err}");
+    let err = SweepJob::prepare(
+        &reference_dipole("FR 0 1 0 0 14.2 0\n"),
+        1000.0,
+        1000.000000000001,
+        1e-13,
+        SolverKind::Hallen,
+    )
+    .err()
+    .expect("refused in the job");
+    assert!(
+        err.contains("step_mhz (0.0000000000001)") && err.contains("below the resolution"),
+        "{err}"
+    );
+}
+
 /// FND-297 c: the sweep expands its range through the shared expander, so the
 /// GUI and `--sweep-config` give one range the same points — `start + i·step`,
 /// the `FR` card's derivation — including where floating point is hostile:

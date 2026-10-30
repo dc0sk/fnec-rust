@@ -95,7 +95,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/sinusoidal_a2_regression.rs` | 2 | Sinusoidal solver tracks Hallén on dipole + sweep | DEC-011, PH6-CHK-003 |
 | `apps/nec-cli/tests/sinusoidal_routing.rs` | 2 | FND-203: `--solver sinusoidal` refuses bent, split, junction and loop decks by name (path route and graph-declined topology both), and still solves straight and collinear decks on its basis. | FND-203 |
 | `apps/nec-cli/tests/sommerfeld_ground_cli.rs` | 7 | PH9-CHK-006: `fnec --ground-solver sommerfeld` must correct the near-ground feedpoint impedance of a low horizontal dipole to the surface-wave-inclusive (nec2c GN2) value, flipp…; a plane-wave receive deck says the correction cannot apply (FND-170) | PH9-CHK-006 |
-| `apps/nec-cli/tests/sweep_config_replaces_fr.rs` | 3 | FND-210: under `--sweep-config` the deck's FR cards neither refuse the run (a negative FR the sweep replaces) nor describe it (the superseded-FR caveat); without it both still apply. FND-290: a `TL` λ/2 long at a listed frequency is refused naming that frequency and `--sweep-config`; the list that avoids it solves. | FND-210, FND-290 |
+| `apps/nec-cli/tests/sweep_config_replaces_fr.rs` | 4 | FND-210: under `--sweep-config` the deck's FR cards neither refuse the run (a negative FR the sweep replaces) nor describe it (the superseded-FR caveat); without it both still apply. FND-290: a `TL` λ/2 long at a listed frequency is refused naming that frequency and `--sweep-config`; the list that avoids it solves. FND-316: a range step below its resolution is refused by the binary, exit 1, nothing on stdout. | FND-210, FND-290, FND-316 |
 | `apps/nec-cli/tests/sweep_memory_budget.rs` | 3 | FND-187: a small `FNEC_SWEEP_MEMORY_BUDGET_MB` caps the points in flight and says so, with every point still out in frequency order; an ample budget is silent; a malformed one is reported | FND-187 |
 | `apps/nec-cli/tests/sweep_contract.rs` | 8 | Sweep point/list/linear produce correct frequency blocks; `--sweep-config` **supplies** frequencies for an FR-less deck, and a deck with no frequency from any source is refused (FND-070) | FR-007, PH3-CHK-006 |
 | `apps/nec-cli/tests/sweep_partial_output.rs` | 2 | A sweep prints the points it computed, even when one of them fails. | FND-033 |
@@ -115,7 +115,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/worker_mesh.rs` | 2 | FND-227 — a worker on another mesh is refused, not blended into a sweep: a stand-in for a pre-refinement fnec (no `mesh` in its result) fails its task with the reason and stays in the pool; this build's own worker answers. | FND-227 |
 | `apps/nec-cli/tests/worker_poison_budget.rs` | 3 | FND-102 — one task that kills workers must not kill the pool; FND-244 — a task whose write stalls on workers that stopped reading is not blamed for them, and reaches a live one. | FND-102, FND-244 |
 | `apps/nec-cli/tests/worker_task_fault.rs` | 1 | FND-117 — a task fault must not evict the worker that reported it. | FND-117 |
-| `apps/nec-gui/tests/gui_smoke.rs` | 144 | Headless GUI state machine + solve pipeline; run-identity guards; editor save binding (FND-103); the sweep validates its own frequencies, not the deck's `FR` (FND-290, against nec2c), expands its range through the shared expander (FND-297 c) and allows one point (D5); two `EX` cards on one segment drive it with the last on both GUI paths (override warning, the one-card deck's gain), and a TL port on such a segment is refused on both (FND-305) | PRT-004, PH3-CHK-009/010/011, FND-290, FND-297, FND-305 |
+| `apps/nec-gui/tests/gui_smoke.rs` | 145 | Headless GUI state machine + solve pipeline; run-identity guards; editor save binding (FND-103); the sweep validates its own frequencies, not the deck's `FR` (FND-290, against nec2c), expands its range through the shared expander (FND-297 c), allows one point (D5) and refuses a step below the range's resolution (FND-316); two `EX` cards on one segment drive it with the last on both GUI paths (override warning, the one-card deck's gain), and a TL port on such a segment is refused on both (FND-305) | PRT-004, PH3-CHK-009/010/011, FND-290, FND-297, FND-305, FND-316 |
 | `crates/nec_accel/tests/gpu_hallen_solve.rs` | 1 | Gate G7: GPU Z-fill + CPU Hallén solve end-to-end | PH5-CHK-007 |
 | `crates/nec_accel/tests/gpu_microbench.rs` | 1 | Microbench separates per-dispatch time from device init | PH7-CHK-002 |
 | `crates/nec_accel/tests/gpu_backoff.rs` | 1 | FND-234 — a cached device failure is returned without a rebuild until its backoff passes (also past the 60 s cap), a device lost under a dispatch is one more counted failure, and past the backoff the next caller asks the driver again: a fresh device on a GPU host, a counted fresh failure without one; its own binary, because the cache is process-global | FND-234 |
@@ -174,7 +174,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=961 --> **961** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=963 --> **963** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -185,21 +185,21 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 325 | residual caveat threshold, the `ResidualKind` predicate's every arm and the shared NaN-is-worst reduction (FND-302), convergence (the settle rule), refine (the finer mesh's map), lnetwork (L-network matching, with a proptest that every network presents its target), loads, corner term, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
+| `nec_solver` | 329 | residual caveat threshold, the `ResidualKind` predicate's every arm and the shared NaN-is-worst reduction (FND-302), convergence (the settle rule), refine (the finer mesh's map), lnetwork (L-network matching, with a proptest that every network presents its target), loads, corner term, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
 | `nec_worker` | 100 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 103 | the FND-302 caveat firing through the single solve and the sweep stream, app_state, model_doc, mesh, camera, solve |
-| `apps/nec-cli` | 56 | main, match_cmd (impedance spellings, text and JSON blocks), exec_profile, kernel (the PAR-011 kernel path, CRLF and warnings, its failure), sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
+| `apps/nec-cli` | 57 | main, match_cmd (impedance spellings, text and JSON blocks), exec_profile, kernel (the PAR-011 kernel path, CRLF and warnings, its failure), sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
 | `nec_parser` | 51 | lib (incl. the FND-236 card treatments, FND-237 comma fields, the PAR-011 program-card records, and the positional reading of FR/RP/GN/TL/NT/PT with its refusals, FND-283/284/285/287/298/300), template |
 | `nec_accel` | 40 | kernel_reference 20, lib 4, `wgpu_device` RUST_LOG filter 3 (FND-190), GPU wait timeout 5 (FND-196), failure backoff 3 (FND-234), `gpu_test` re-run policy 4 (FND-215) |
 | `nec_report` | 33 | lib 25, sweep 5 (`SWEEP_POINTS` and `INPUT_IMPEDANCE`, FND-309), fortran 3 (NEC-2 FORMAT lines lifted from the kernel fixtures, records, edge cases) |
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 8 | lib 7, constants 1 (μ0 ε0 c² = 1, FND-297 b) |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=737 --> **737** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=742 --> **742** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1705 --> **1705** = 737 unit + 961 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1712 --> **1712** = 742 unit + 963 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
