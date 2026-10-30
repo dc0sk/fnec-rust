@@ -270,6 +270,11 @@ junction, so the two-way reading refuses `dipole-ex4-collinear-split-51seg.nec`,
 which solves today. `reducible_collinear_split_current_source_keeps_the_per_wire_basis`
 is that gate, and it fails when the arms are merged.
 
+Row 6 carries straight and collinear wires only. A bent or reversed path, like a
+junction, loop or radius step, is refused with `NeedsRoutedSolve`: its solve is
+row 1's `solve_hallen_routed`, the only one that sees the run's loads and ports
+as gaps (FND-310). The session reaches row 6 only on reducible geometry.
+
 ---
 
 ## Maintaining this

@@ -113,6 +113,18 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   the EFIE vector, every Hallén right-hand side, the section graph, the network
   solve, the MPIE, the feedpoint rows and the input power. EX I4's
   `INPUT_IMPEDANCE` finds its source by segment.
+- `solve_current_source_hallen` refuses a bent or reversed conductor path with
+  `CurrentSourceError::NeedsRoutedSolve`, as it has refused a junction or loop
+  since FND-211, and solves straight and collinear wires only (FND-310). Its
+  path arm was a second copy of the routed solve's that differed in two ways:
+  it built its gap list from the deck's `LD` cards, so a caller that stamped
+  `--loads-config` loads got gaps without them, and it marked only its own
+  source as a gap, not the run's other feeds and ports. No frontend reached it —
+  the routed solve answers every such deck — and the two agreed exactly on
+  every deck its tests carry, measured before the arm went. Its two FND-270
+  tests now run through `solve_hallen_routed`, one with a load only the
+  diagonal carries.
+
 - **`EX` I4 units digits 2–9, and units 1 with a negative F3, are refused** on a
   voltage source (types 0 and 5; FND-309). NEC-2 defines 0 and 1. nec2c reads 2
   as a fixed factor even when F3 = 0 (printing `INF`) and 3–9, or a negative F3,
