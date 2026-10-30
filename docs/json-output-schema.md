@@ -67,7 +67,7 @@ resolved list, not over the deck.
 | `z_im` | `number` | Ω | Imaginary part of feedpoint impedance (reactance). |
 | `z_abs` | `number` | Ω | Magnitude of feedpoint impedance: `sqrt(z_re² + z_im²)`. |
 | `z_arg_deg` | `number` | ° | Phase angle of feedpoint impedance: `atan2(z_im, z_re)` in degrees. |
-| `feedpoints` | `object[]` | — | **Every** feedpoint of the point, in the text report's `FEEDPOINTS` order, each with `tag`, `seg`, `z_re`, `z_im`, `z_abs`, `z_arg_deg` as above. Always present — one element for a one-source deck — so a consumer never branches on its presence. The top-level fields are its first element, digit for digit (FND-291). |
+| `feedpoints` | `object[]` | — | **Every** feedpoint of the point, in the text report's `FEEDPOINTS` order, each with `tag`, `seg`, `z_re`, `z_im`, `z_abs`, `z_arg_deg` as above — one element per driven segment: a segment two `EX` cards name is one element, driven as NEC-2 drives it, and the overridden card's warning is on stderr with the others (FND-305). Always present — one element for a one-source deck — so a consumer never branches on its presence. The top-level fields are its first element, digit for digit (FND-291). |
 | `caveat` | `string` | — | **Present only** when the point came from an unvalidated solver (`--solver pulse`/`continuity`, which need `--experimental-solver`; FND-080). Says why the numbers are not a result. Absent for every validated solver, so their records are unchanged. |
 | `input_impedance` | `object` | — | **Present only** when the text report would print its `INPUT_IMPEDANCE` table (FND-314): the last voltage-source `EX` card has I4's units digit 1, two or more points solved, and none failed. Then on **every** record, last in it. Its presence is the information: a sweep that lost a point carries it on no record and warns on stderr. See below. |
 
@@ -119,7 +119,7 @@ Two wires of 81 segments, `EX 0 1 41 0 1 0 0` then `EX 0 2 41 1 1 0 50`,
 
 | Field | Type | Description |
 |:------|:-----|:------------|
-| `feedpoint_index` | `integer` | The row the table follows, 0-based into the record's `feedpoints`: nec2c's source, the last `EX 5`, else the last `EX 0` — not necessarily the first feedpoint the top level repeats. Its Z is `feedpoints[feedpoint_index]`. `(tag, seg)` alone does not identify it: two cards can drive one segment (FND-305). |
+| `feedpoint_index` | `integer` | The row the table follows, 0-based into the record's `feedpoints`: nec2c's source, the last `EX 5`, else the last `EX 0` — not necessarily the first feedpoint the top level repeats. Its Z is `feedpoints[feedpoint_index]`. It is the row on the source's segment: the rows are one per driven segment (FND-305), so `source_abs_seg` names it too. |
 | `source_tag`, `source_seg` | `integer` | That feedpoint's tag and segment within the tag, as in `feedpoints`. |
 | `source_abs_seg` | `integer` | Its absolute segment number, from 1 — the text header's `SOURCE_SEGMENT`, nec2c's SOURCE SEGMENT No. |
 | `normalization_ohms` | `number` | The divisor, Ω: the card's F3 when F3 > 0, else the sweep's largest \|Z\| of that feedpoint. The same on every record. |

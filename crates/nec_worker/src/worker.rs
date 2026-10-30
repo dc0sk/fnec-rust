@@ -541,6 +541,33 @@ mod tests {
         );
     }
 
+    /// FND-305 (U3): the worker reaches the TL/NT-port refusal too, through
+    /// `pre_solve_error_at`; a unit test on the refusal stays green without it.
+    #[test]
+    fn a_network_port_on_a_doubly_fed_segment_is_refused() {
+        let deck = "CE\nGW 1 21 0 0 -2.5 0 0 2.5 0.001\nGW 2 21 1 0 -2.5 1 0 2.5 0.001\nGE 0\n\
+                    EX 0 1 11 0 1 0\nEX 0 1 11 0 0.5 0\nTL 1 11 2 11 50 0 0 0 0 0\n\
+                    FR 0 1 0 0 29.9 0\nEN\n";
+        let result = process_task(&task_line(deck));
+        let TaskResult::Error {
+            error_code,
+            error_message,
+            ..
+        } = &result
+        else {
+            panic!("expected a refusal for a port on a doubly-fed segment: {result:?}");
+        };
+        assert_eq!(*error_code, ErrorCode::UnsupportedConfig);
+        assert!(
+            error_message.contains("TL/NT: a port on tag 1 segment 11"),
+            "{error_message}"
+        );
+        // Control: one card with the same line solves.
+        let one = deck.replace("EX 0 1 11 0 1 0\n", "");
+        let result = process_task(&task_line(&one));
+        assert!(matches!(result, TaskResult::Ok { .. }), "{result:?}");
+    }
+
     /// FND-125: an over-large deck is well-formed and its geometry is supported —
     /// it is simply too big. That is a different remedy from "this config is not
     /// supported", so it gets `ResourceExhausted`, which had been on the wire

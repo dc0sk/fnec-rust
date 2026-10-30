@@ -47,10 +47,13 @@ pub enum InputImpedanceNorm {
 }
 
 /// A deck's request for the input-impedance table: the feedpoint it follows,
-/// by index into [`SweepPoint::feeds`], and its normalization.
+/// by its absolute segment number ([`SweepFeed::abs_seg`], nec2c's SOURCE
+/// SEGMENT No), and its normalization. Keyed by segment, not by row index: the
+/// rows are one per driven segment, so a card NEC-2 overrides has none and an
+/// index counted over the cards points past the source (FND-305).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InputImpedanceRequest {
-    pub feed_index: usize,
+    pub abs_seg: usize,
     pub norm: InputImpedanceNorm,
 }
 
@@ -69,8 +72,9 @@ pub struct SweepSections {
 /// different source or factor.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InputImpedanceTable {
-    /// Index into each point's [`SweepPoint::feeds`]. `(tag, seg)` alone does not
-    /// identify the row: two cards can drive one segment (FND-305).
+    /// Index into each point's [`SweepPoint::feeds`] of the row on the request's
+    /// segment: the rows are one per driven segment (FND-305), in the same order
+    /// at every point.
     pub feed_index: usize,
     /// The divisor, ohms.
     pub factor: f64,
@@ -135,16 +139,16 @@ pub fn input_impedance_table(
         // nec2c prints no table for a single frequency (main.c, nfrq == 1).
         return InputImpedanceOutcome::NoTable;
     }
+    let row = |p: &SweepPoint| p.feeds.iter().position(|f| f.abs_seg == request.abs_seg);
+    let Some(feed_index) = points.first().and_then(row) else {
+        return no_row(request);
+    };
     let Some(chosen) = points
         .iter()
-        .map(|p| p.feeds.get(request.feed_index).copied())
+        .map(|p| (row(p) == Some(feed_index)).then(|| p.feeds[feed_index]))
         .collect::<Option<Vec<SweepFeed>>>()
     else {
-        return InputImpedanceOutcome::Omitted(format!(
-            "EX I4's input-impedance print (INPUT_IMPEDANCE) omitted: a point has no \
-             feedpoint row {} to report",
-            request.feed_index + 1
-        ));
+        return no_row(request);
     };
     let (factor, normalized_to) = match request.norm {
         InputImpedanceNorm::Fixed(f) => (f, "F3"),
@@ -154,11 +158,20 @@ pub fn input_impedance_table(
         ),
     };
     InputImpedanceOutcome::Table(InputImpedanceTable {
-        feed_index: request.feed_index,
+        feed_index,
         factor,
         normalized_to,
         chosen,
     })
+}
+
+/// The warning for a point with no feedpoint row on the requested segment.
+fn no_row(request: InputImpedanceRequest) -> InputImpedanceOutcome {
+    InputImpedanceOutcome::Omitted(format!(
+        "EX I4's input-impedance print (INPUT_IMPEDANCE) omitted: a point has no \
+         feedpoint row on segment {} to report",
+        request.abs_seg
+    ))
 }
 
 /// Render `SWEEP_POINTS` (for two or more points) and, when `request` asks for
@@ -269,7 +282,7 @@ mod tests {
             point(30.9, &[(86.740, 87.106)]),
         ];
         let req = InputImpedanceRequest {
-            feed_index: 0,
+            abs_seg: 6,
             norm: InputImpedanceNorm::Fixed(50.0),
         };
         let s = render_sweep_sections(&pts, Some(req), &[]);
@@ -288,7 +301,7 @@ mod tests {
     #[test]
     fn the_max_factor_is_the_sweep_s_largest_magnitude_of_the_chosen_feed() {
         let req = InputImpedanceRequest {
-            feed_index: 0,
+            abs_seg: 6,
             norm: InputImpedanceNorm::Max,
         };
         let s = render_sweep_sections(&max_sweep(), Some(req), &[]);
@@ -309,7 +322,7 @@ mod tests {
             point(30.9, &[(20.0, 0.0), (160.0, 80.0)]),
         ];
         let req = InputImpedanceRequest {
-            feed_index: 1,
+            abs_seg: 17,
             norm: InputImpedanceNorm::Fixed(50.0),
         };
         let s = render_sweep_sections(&pts, Some(req), &[]);
@@ -324,7 +337,7 @@ mod tests {
     #[test]
     fn no_table_for_one_point_or_a_partial_sweep_or_no_request() {
         let req = InputImpedanceRequest {
-            feed_index: 0,
+            abs_seg: 6,
             norm: InputImpedanceNorm::Max,
         };
         // Success checks with each absence: the same call prints the table when
@@ -356,7 +369,7 @@ mod tests {
             point(30.9, &[(86.740, 87.106)]),
         ];
         let req = InputImpedanceRequest {
-            feed_index: 0,
+            abs_seg: 6,
             norm: InputImpedanceNorm::Max,
         };
         let s = render_sweep_sections(&pts, Some(req), &[]);
