@@ -154,6 +154,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A GPU-resident solve is checked against the f64 problem** (FND-307), in the
+  CLI and in a `--hosts` worker. The device fills and solves in f32 and judged
+  itself against its own fill, and the CLI's residual was against the same f32
+  fill, so a defect in the fill passed both (a planted 1e-4 diagonal error read
+  8e-9); the worker computed no residual of the device's currents at all. The
+  residual is now against the CPU's f64 fill, and above 1e-4
+  (`FNEC_DEVICE_REL_RESIDUAL_MAX`) the point declines to the f64 CPU solve with a
+  warning. Healthy solves read 3e-6 at 205 segments to 3.1e-5 at 6405. A point
+  the device declines at run time is now solved from the f64 matrix, not the f32
+  one. `fill_exec` reads `cpu` on every point. The f64 fill adds 26–48 % to a
+  resident solve that stays 25–90× faster than the CPU's.
 - **A `TL` or `NT` port on a segment more than one `EX` card drives is refused**
   (FND-305), on every frontend. nec2c prices that network from the first card and
   drives the structure with the last: on two dipoles with `EX 0 1 11` 1 V, then

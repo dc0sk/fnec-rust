@@ -1409,58 +1409,16 @@ pub(super) fn solve_frequency_point(
         execution_mode,
         freq_hz,
     )?;
-    // Whether the matrix the solve used was filled on the device, for the record.
-    let mut filled_on_device = false;
     let mut z_mat = match solver_mode {
-        SolverMode::Hallen => {
-            // The device fills the Z-matrix in f32 only for a point the resident
-            // solve takes (free space, nothing stamped). It used to fill every
-            // `--exec gpu` free-space deck of 128 segments or more, and when the
-            // resident solve then declined — a load, a bend — the CPU solved the
-            // f32 matrix: 106.383566 + j36.388674 against the f64 106.383595 +
-            // j36.388745 on a 201-segment deck with `LD 4`, recorded as
-            // `solve_exec=cpu`, and different from the worker, which always fills
-            // in f64 (FND-293). A declined point is now filled on the CPU in f64.
-            //
-            // A minimum segment count guards against wgpu device-init overhead
-            // dominating for small problems where CPU assembly is < 1 ms. It is
-            // above `nec_accel::MIN_GPU_RESIDENT_SEGS`, so a resident solve of
-            // fewer segments reads `fill_exec=cpu solve_exec=gpu`: the device
-            // re-fills from raw segment inputs for its own solve, and this host
-            // matrix serves the residual check only.
-            const MIN_GPU_ZMATRIX_SEGS: usize = 128;
-            let try_gpu = resident_plan.is_some() && segs.len() >= MIN_GPU_ZMATRIX_SEGS;
-            if try_gpu {
-                let z_inputs: Vec<nec_accel::ZSegmentInput> = segs
-                    .iter()
-                    .map(|s| nec_accel::ZSegmentInput {
-                        midpoint: s.midpoint,
-                        direction: s.direction,
-                        length: s.length,
-                        radius: s.radius,
-                    })
-                    .collect();
-                match pollster::block_on(nec_accel::fill_zmatrix_wgpu(&z_inputs, freq_hz)) {
-                    Ok(elems) => {
-                        let n = segs.len();
-                        let flat: Vec<Complex64> = elems
-                            .iter()
-                            .map(|e| Complex64::new(e.re as f64, e.im as f64))
-                            .collect();
-                        let mut z = ZMatrix::from_flat(n, flat);
-                        z.set_segments(segs);
-                        filled_on_device = true;
-                        z
-                    }
-                    Err(why) => {
-                        eprintln!("warning: --exec gpu: {why}; falling back to CPU Z-matrix fill");
-                        assemble_z_matrix_with_ground(segs, freq_hz, ground)
-                    }
-                }
-            } else {
-                assemble_z_matrix_with_ground(segs, freq_hz, ground)
-            }
-        }
+        // In f64 on the CPU, a resident point too. The device fills its own f32
+        // matrix for its solve; this one is the problem its currents are checked
+        // against (FND-307). It used to be the device's f32 fill at 128 segments
+        // or more, so the residual checked the device against itself — blind to a
+        // fill defect: a planted 1e-4 diagonal error read 8e-9 — and a point the
+        // device declined at run time (no convergence, a lost device) was solved
+        // on the CPU from that f32 matrix (FND-293's residue). The fill costs
+        // 26–48 % of a resident solve that is 25–90× faster than the CPU's.
+        SolverMode::Hallen => assemble_z_matrix_with_ground(segs, freq_hz, ground),
         SolverMode::Pulse | SolverMode::Continuity => assemble_pocklington_matrix(segs, freq_hz),
         SolverMode::Sinusoidal => {
             // Sinusoidal mode uses the Hallén thin-wire Z-matrix (same as Hallen),
@@ -1608,13 +1566,16 @@ pub(super) fn solve_frequency_point(
                 .as_ref()
                 .and_then(|plan| Some((maybe_gpu_resident_hallen(segs, plan, freq_hz)?, plan)));
 
+            // The device's answer, kept only if its residual against the f64
+            // problem is inside the bound; otherwise the routed CPU solve below
+            // answers the point, as for any other device decline (FND-307).
+            let mut device: Option<(Vec<Complex64>, (f64, f64))> = None;
             if let Some((sol, plan)) = gpu_sol {
                 let GpuResidentPlan {
                     hallen_rhs,
                     merged_endpoints,
                     junctions: junction_tuples,
                 } = plan;
-                ran_on_gpu = true;
                 // This arm exists because it bypasses `solve_hallen_routed`, so
                 // the guard there does not reach it (FND-126).
                 nec_solver::check_currents_finite(&sol.currents).map_err(|e| e.to_string())?;
@@ -1625,18 +1586,27 @@ pub(super) fn solve_frequency_point(
                     merged_endpoints,
                     junction_tuples,
                 );
-                // Against `z_mat`, which at 128 segments or more is the device's
-                // own f32 fill: the check confirms the solve of that system, not
-                // of the f64 problem (FND-307, open).
+                // Against `z_mat`, the CPU's f64 fill: the device's currents
+                // checked against the problem, not against the device's own f32
+                // matrix (FND-307).
                 let res = nec_solver::ResidualInputs::plain(
                     h,
                     hallen_rhs.rhs.clone(),
                     merged_endpoints.clone(),
                 )
                 .residual(&z_mat, &sol.currents);
+                let max = nec_solver::validate::device_residual_max()?;
+                match nec_solver::validate::device_residual_decline(res.1, max) {
+                    Some(w) => eprintln!("warning: {w}"),
+                    None => device = Some((sol.currents, res)),
+                }
+            }
+
+            if let Some((currents, res)) = device {
+                ran_on_gpu = true;
                 (
-                    sol.currents,
-                    Some((res, nec_solver::validate::ResidualKind::DeviceF32)),
+                    currents,
+                    Some((res, nec_solver::validate::ResidualKind::DeviceSolveF64)),
                     "hallen",
                 )
             } else {
@@ -2144,7 +2114,6 @@ pub(super) fn solve_frequency_point(
             sommerfeld_outcome,
             deck_loaded,
             config_loaded: !laplace_loads.is_empty(),
-            filled_on_device,
             solved_on_device: ran_on_gpu,
             pattern_rows,
             pattern_on_device: rp_on_device,
@@ -2199,8 +2168,6 @@ pub(super) struct DecisionInputs<'a> {
     pub(super) sommerfeld_outcome: SommerfeldOutcome,
     pub(super) deck_loaded: bool,
     pub(super) config_loaded: bool,
-    /// Whether the device filled the Z-matrix the solve used (in f32).
-    pub(super) filled_on_device: bool,
     pub(super) solved_on_device: bool,
     pub(super) pattern_rows: usize,
     pub(super) pattern_on_device: bool,
@@ -2263,7 +2230,10 @@ pub(super) fn decision_record(d: &DecisionInputs<'_>) -> String {
         (false, true) => "config",
         (true, true) => "deck+config",
     };
-    let fill = if d.filled_on_device { "gpu" } else { "cpu" };
+    // Always `cpu` since FND-307: every matrix a solve or a residual reads is the
+    // CPU's f64 fill (the device's own f32 fill stays on the device). The key
+    // stays, as the parity sweep and the FND-293 record read it.
+    let fill = "cpu";
     let solve = if d.solved_on_device { "gpu" } else { "cpu" };
     let rp = match (d.pattern_rows, d.pattern_on_device) {
         (0, _) => "none",
