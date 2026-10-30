@@ -88,21 +88,54 @@ pub fn assert_diag_field_is_finite_nonnegative(stderr: &str, key: &str) {
 ///
 /// Derefs to `Path`, so a call site that had a `PathBuf` needs no change beyond
 /// binding the guard to a variable that outlives its use.
+///
+/// The guard owns uniqueness: the path is `fnec-t{pid}-{n}-{file_name}`, the pid
+/// across processes and a counter within one, and it never replaces an existing
+/// file. Tests in one binary run in parallel, and callers that keyed the name on
+/// the clock collided: two `SystemTime::now()` reads returned the same
+/// nanosecond, one test's load file replaced the other's, and a refusal test
+/// solved a valid load (FND-319; the same mechanism as FND-001's aliases).
 pub struct TempDeck {
     path: std::path::PathBuf,
 }
 
+/// Distinguishes two guards this process creates, whatever names they pass.
+static TEMP_DECK_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 impl TempDeck {
-    /// Write `body` to `<temp dir>/<file_name>`.
-    ///
-    /// `file_name` must already be unique per test — the guard does not
-    /// disambiguate, because tests within one binary run in parallel and two
-    /// sharing a name would delete each other's file mid-run.
+    /// Write `body` to a fresh file in the temp directory whose name ends in
+    /// `file_name`, a bare name (its extension is kept).
     pub fn new(file_name: &str, body: &str) -> Self {
-        let path = std::env::temp_dir().join(file_name);
-        std::fs::write(&path, body)
-            .unwrap_or_else(|e| panic!("failed to write temp deck {}: {e}", path.display()));
-        Self { path }
+        assert!(
+            std::path::Path::new(file_name).components().count() == 1,
+            "TempDeck file_name must be a bare name, got {file_name:?}"
+        );
+        let n = TEMP_DECK_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path =
+            std::env::temp_dir().join(format!("fnec-t{}-{n}-{file_name}", std::process::id()));
+        Self::try_at(path.clone(), body).unwrap_or_else(|e| {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                panic!(
+                    "scratch file already exists: {} — a killed test run left it (same pid \
+                     recycled); delete it",
+                    path.display()
+                )
+            }
+            panic!("failed to write temp deck {}: {e}", path.display())
+        })
+    }
+
+    /// The primitive: write `body` to `path`, refusing a path that exists.
+    /// Callers use [`TempDeck::new`].
+    pub fn try_at(path: std::path::PathBuf, body: &str) -> std::io::Result<Self> {
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)?;
+        let guard = Self { path };
+        f.write_all(body.as_bytes())?;
+        Ok(guard)
     }
 
     pub fn path(&self) -> &std::path::Path {
