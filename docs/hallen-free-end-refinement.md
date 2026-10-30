@@ -143,7 +143,8 @@ the gate is an MPIE pattern value pinned against today's.
   #562 refusal stays as a backstop and becomes unreachable on product paths.
 - An end-fed answer is the mesh's, not the antenna's: with the gap on the end
   segment it keeps moving as the mesh refines, in nec2c as in fnec. Every Hallén
-  route says so for a feed (`EX` 0/4/5) there (FND-294, a caveat, not a refusal);
+  route says so for a feed (`EX` 0/4/5) there (FND-294, a caveat, not a refusal),
+  and for a `TL`/`NT` port there that its network drives (FND-311);
   `nec_solver::geometry::at_free_end` is the one predicate — the `Centre` third on
   this geometry, `free_end_segments` on the deck's — which the MPIE's end-feed
   refusal (FND-228) uses too.

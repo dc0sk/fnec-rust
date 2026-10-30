@@ -395,35 +395,225 @@ fn undefined_print_requests_are_refused() {
     );
 }
 
-/// JSON has no form for the table: a warning naming the remedy, and the
-/// records as before. One frequency has no table to warn about.
+/// `--output-format json` records, parsed.
+fn json(o: &Output) -> Vec<serde_json::Value> {
+    assert!(o.status.success(), "{}", stderr(o));
+    serde_json::from_str(&stdout(o)).unwrap_or_else(|e| panic!("{e}: {}", stdout(o)))
+}
+
+/// A record's `input_impedance` as `(feedpoint_index, (tag, seg, abs_seg),
+/// normalization_ohms, normalized_to, zn_re, zn_im, zn_abs)`.
+type JsonTable = (u64, (u64, u64, u64), f64, String, f64, f64, f64);
+
+fn json_table(rec: &serde_json::Value) -> Option<JsonTable> {
+    let t = rec.get("input_impedance")?;
+    let u = |k: &str| t[k].as_u64().unwrap_or_else(|| panic!("{k}: {t}"));
+    let f = |k: &str| t[k].as_f64().unwrap_or_else(|| panic!("{k}: {t}"));
+    Some((
+        u("feedpoint_index"),
+        (u("source_tag"), u("source_seg"), u("source_abs_seg")),
+        f("normalization_ohms"),
+        t["normalized_to"]
+            .as_str()
+            .expect("normalized_to")
+            .to_string(),
+        f("zn_re"),
+        f("zn_im"),
+        f("zn_abs"),
+    ))
+}
+
+/// Every value of `"key":` in the JSON text, in order, parsed by `str::parse`.
+/// serde_json's default float parser is not correctly rounded (it is one ulp
+/// off on these records), Rust's is, so an exact assertion reads the token.
+fn exact_numbers(out: &str, key: &str) -> Vec<f64> {
+    let pat = format!("\"{key}\":");
+    out.match_indices(&pat)
+        .map(|(i, _)| {
+            let tail = &out[i + pat.len()..];
+            let end = tail.find([',', '}', ']']).expect("a number ends");
+            tail[..end].parse().expect("a number")
+        })
+        .collect()
+}
+
+/// The chosen feedpoint's exact Z per record, and each record's exact `zn_*`.
+/// A record writes `z_re` at its top level and then once per feedpoint, so with
+/// `n_feeds` feedpoints the chosen one's is occurrence `1 + feed` of each
+/// `1 + n_feeds`.
+fn exact_zn(out: &str, n_feeds: usize, feed: usize) -> Vec<((f64, f64), (f64, f64))> {
+    let (re, im) = (exact_numbers(out, "z_re"), exact_numbers(out, "z_im"));
+    let (zn_re, zn_im) = (exact_numbers(out, "zn_re"), exact_numbers(out, "zn_im"));
+    assert_eq!(re.len(), zn_re.len() * (1 + n_feeds), "{out}");
+    (0..zn_re.len())
+        .map(|r| {
+            let k = r * (1 + n_feeds) + 1 + feed;
+            ((re[k], im[k]), (zn_re[r], zn_im[r]))
+        })
+        .collect()
+}
+
+/// A record's `feedpoints[i]` Z.
+fn json_z(rec: &serde_json::Value, i: usize) -> (f64, f64) {
+    let f = &rec["feedpoints"][i];
+    (f["z_re"].as_f64().unwrap(), f["z_im"].as_f64().unwrap())
+}
+
+/// FND-314: JSON carries the table as each record's `input_impedance`, from the
+/// decision the text section takes. Its normalized Z is the record's chosen
+/// feedpoint over the factor exactly: the division is componentwise and `{}`
+/// round-trips an f64, read back by `str::parse` ([`exact_zn`]). The comparison with the text table from the same
+/// binary is the wiring check — one function renders both, so it is not a
+/// numeric gate; the nec2c anchor is the next test. The same deck with units
+/// digit 0 carries no field (the control), and a single point carries none and
+/// warns of nothing, as the text report prints no table there.
 #[test]
-fn json_warns_that_the_table_is_not_written() {
+fn json_records_carry_the_table() {
     let body = format!("{DIPOLE}EX 0 1 6 11 1 0 50\nFR 0 2 0 0 29.9 1\n");
     let o = fnec("json", &body, &["--output-format", "json"]);
-    assert!(o.status.success(), "{}", stderr(&o));
-    let out = stdout(&o);
-    assert!(
-        out.starts_with('[') && out.matches("\"freq_mhz\"").count() == 2,
-        "{out}"
+    assert!(!stderr(&o).contains("input-impedance"), "{}", stderr(&o));
+    for ((re, im), zn) in exact_zn(&stdout(&o), 1, 0) {
+        assert_eq!(zn, (re / 50.0, im / 50.0));
+    }
+    let recs = json(&o);
+    assert_eq!(recs.len(), 2);
+    let text = table(&solved(&fnec("json_text", &body, &[]))).expect("the text table");
+    for (rec, row) in recs.iter().zip(&text.rows) {
+        let (idx, src, factor, to, zn_re, zn_im, zn_abs) = json_table(rec).expect("the field");
+        assert_eq!((idx, src, factor, to.as_str()), (0, (1, 6, 6), 50.0, "F3"));
+        let (re, im) = json_z(rec, 0);
+        assert!((zn_abs - re.hypot(im) / 50.0).abs() <= 4.0 * f64::EPSILON * zn_abs);
+        // The text table's columns, to the seven digits it prints.
+        for (j, v) in [(5, zn_re), (6, zn_im), (7, zn_abs)] {
+            assert!(
+                (row[j] - v).abs() <= 1e-6 * v.abs().max(1e-3),
+                "{row:?} vs {rec}"
+            );
+        }
+    }
+    let off = fnec(
+        "json_off",
+        &format!("{DIPOLE}EX 0 1 6 10 1 0 50\nFR 0 2 0 0 29.9 1\n"),
+        &["--output-format", "json"],
     );
-    let err = stderr(&o);
+    let off = json(&off);
     assert!(
-        err.contains("warning: EX I4's input-impedance print")
-            && err.contains("--output-format text"),
-        "{err}"
+        off.len() == 2 && off.iter().all(|r| json_table(r).is_none()),
+        "{off:?}"
     );
     let one = fnec(
         "json_one",
         &format!("{DIPOLE}EX 0 1 6 11 1 0 50\nFR 0 1 0 0 29.9 0\n"),
         &["--output-format", "json"],
     );
-    assert!(one.status.success(), "{}", stderr(&one));
-    assert!(stdout(&one).contains("\"freq_mhz\""));
     assert!(
         !stderr(&one).contains("input-impedance"),
         "{}",
         stderr(&one)
+    );
+    let one = json(&one);
+    assert!(one.len() == 1 && json_table(&one[0]).is_none(), "{one:?}");
+}
+
+/// The JSON table against nec2c, on the largest-|Z| deck — where the factor is
+/// computed, not echoed from F3: 92.9392 (the 30 MHz |Z|), and 28 MHz
+/// normalized to 0.69553 − j0.49439 (deck `max`, 81 segments).
+#[test]
+fn a_json_largest_magnitude_table_matches_nec2c() {
+    let o = fnec(
+        "json_max",
+        &format!("{DIPOLE_81}EX 0 1 41 1 1 0 0\nFR 0 3 0 0 28 1\n"),
+        &["--output-format", "json"],
+    );
+    let recs = json(&o);
+    assert_eq!(recs.len(), 3);
+    let (idx, src, factor, to, zn_re, zn_im, _) = json_table(&recs[0]).expect("the field");
+    assert_eq!((idx, src, to.as_str()), (0, (1, 41, 41), "MAX"));
+    assert!(
+        (factor - 92.9392).abs() <= 0.015 * 92.9392,
+        "factor {factor} against nec2c's 92.9392"
+    );
+    near_nec2c(
+        "28 MHz normalized",
+        (zn_re, zn_im),
+        (0.69553, -0.49439),
+        0.015,
+    );
+    // The factor is the sweep's largest |Z|, the 30 MHz record's.
+    let z_abs: Vec<f64> = recs.iter().map(|r| r["z_abs"].as_f64().unwrap()).collect();
+    assert_eq!(factor, z_abs.iter().copied().fold(0.0, f64::max));
+    assert_eq!(factor, z_abs[2]);
+    for r in &recs {
+        assert_eq!(json_table(r).expect("every record").2, factor);
+    }
+}
+
+/// The table follows the last `EX 0`, FEEDPOINTS row 2 — tag 2 segment 41,
+/// absolute segment 122, on two wires whose impedances differ — and the JSON
+/// names that row by index and both segment numbers. On one wire `seg` and
+/// `abs_seg` coincide, so only this deck tells them apart; normalizing row 1's
+/// Z instead fails `candidates_differ`'s margin.
+#[test]
+fn the_json_table_names_the_row_it_follows() {
+    let body = format!("{TWO_WIRES}EX 0 1 41 0 1 0 0\nEX 0 2 41 1 1 0 50\nFR 0 2 0 0 29.9 1\n");
+    candidates_differ(&feedpoints(&solved(&fnec("json_row_text", &body, &[]))));
+    let o = fnec("json_row", &body, &["--output-format", "json"]);
+    let recs = json(&o);
+    assert_eq!(recs.len(), 2);
+    for rec in &recs {
+        let (idx, src, factor, to, ..) = json_table(rec).expect("the field");
+        assert_eq!(
+            (idx, src, factor, to.as_str()),
+            (1, (2, 41, 122), 50.0, "F3")
+        );
+    }
+    let rows = exact_zn(&stdout(&o), 2, 1);
+    assert_eq!(rows.len(), 2);
+    for ((re, im), zn) in rows {
+        assert_eq!(zn, (re / 50.0, im / 50.0));
+    }
+}
+
+/// A partial sweep carries no table in JSON either — a largest-|Z| factor over
+/// the points that solved is not NEC-2's — and says so on stderr, as the text
+/// report does. 1e-200 MHz fails while its neighbours solve
+/// (`sweep_partial_output.rs`); without it the same deck and sweep carry the
+/// field (the control).
+#[test]
+fn a_partial_json_sweep_carries_no_table_and_says_so() {
+    let run = |name: &str, points: &str| {
+        let cfg = TempDeck::new(
+            &format!("input_impedance_{name}_{}.toml", std::process::id()),
+            &format!("[frequency]\npoints_mhz = [{points}]\n"),
+        );
+        let deck = TempDeck::new(
+            &format!("input_impedance_{name}_{}.nec", std::process::id()),
+            &format!("CE\n{DIPOLE}EX 0 1 6 1 1 0 0\nFR 0 1 0 0 29.9 0\nXQ\nEN\n"),
+        );
+        Command::new(env!("CARGO_BIN_EXE_fnec"))
+            .args(["--output-format", "json", "--sweep-config"])
+            .arg(&*cfg)
+            .arg(&*deck)
+            .output()
+            .expect("run fnec")
+    };
+    let partial = run("partial", "29.9, 1e-200, 30.4");
+    assert!(!partial.status.success(), "a failed point exits non-zero");
+    let recs: Vec<serde_json::Value> = serde_json::from_str(&stdout(&partial)).expect("JSON");
+    assert!(
+        recs.len() == 2 && recs.iter().all(|r| json_table(r).is_none()),
+        "{recs:?}"
+    );
+    assert!(
+        stderr(&partial).contains("input-impedance print (INPUT_IMPEDANCE) omitted")
+            && stderr(&partial).contains("0.000000"),
+        "{}",
+        stderr(&partial)
+    );
+    let whole = json(&run("whole", "29.9, 30.4"));
+    assert!(
+        whole.len() == 2 && whole.iter().all(|r| json_table(r).is_some()),
+        "{whole:?}"
     );
 }
 

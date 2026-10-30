@@ -127,6 +127,15 @@ impl SweepConfig {
                 RangeError::EndBeforeStart { .. } => {
                     format!("frequency.end_mhz ({end}) must be >= start_mhz ({start})")
                 }
+                // Below it the points are not distinct and the count is not the
+                // one typed (FND-316).
+                RangeError::StepBelowResolution {
+                    resolution, max, ..
+                } => format!(
+                    "frequency.step_mhz ({step}) is below the resolution of a frequency \
+                     near {max} MHz ({resolution:e} MHz): the points would not be distinct. \
+                     Widen the step"
+                ),
                 // Bounded BEFORE expanding: `start=1, end=30000, step=1e-7` used to
                 // abort the process on a 2 GB allocation (FND-109).
                 RangeError::TooManyPoints { requested } => format!(
@@ -186,6 +195,20 @@ mod shared_frequency_gate_tests {
     /// allocation when someone removes the cap to check that this test fails.
     /// The 3e11 version spent over a minute growing a vector under sabotage and
     /// had to be killed; this one costs 8 MB if the guard is gone.
+    /// FND-316: a step below the resolution names the step and the resolution.
+    #[test]
+    fn a_step_below_the_resolution_is_refused_by_name() {
+        let e = parse(
+            "[frequency]\nstart_mhz = 1000.0\nend_mhz = 1000.000000000001\nstep_mhz = 1e-13\n",
+        )
+        .unwrap_err();
+        assert!(
+            e.0.contains("step_mhz (0.0000000000001)") && e.0.contains("below the resolution"),
+            "{}",
+            e.0
+        );
+    }
+
     #[test]
     fn an_oversized_range_is_refused_before_it_is_expanded() {
         let e = parse("[frequency]\nstart_mhz = 1.0\nend_mhz = 2.0\nstep_mhz = 0.000001\n")

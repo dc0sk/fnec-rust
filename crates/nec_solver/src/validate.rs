@@ -22,7 +22,7 @@
 //! is outside the solver's supported class and the solve must not run;
 //! a `Warning` means the solve runs but its result carries a caveat.
 
-use nec_model::card::{Card, FeedpointRole};
+use nec_model::card::{Card, ExCard, FeedpointRole};
 use nec_model::deck::NecDeck;
 use nec_model::{DiagnosticLevel, ValidationDiagnostic};
 
@@ -84,6 +84,18 @@ pub fn close_parallel_wire_warning(segs: &[Segment]) -> Option<String> {
 /// superseded-`FR` warning, which needs no geometry, is read separately).
 pub fn solver_neutral_geometry_warnings(segs: &[Segment]) -> Vec<String> {
     close_parallel_wire_warning(segs).into_iter().collect()
+}
+
+/// Every caveat that holds whatever the solver: [`solver_neutral_geometry_warnings`]
+/// and the warning for each `EX` card NEC-2 overrides
+/// ([`overridden_source_warnings`], FND-305), which describes the drive every
+/// solver applies. The one list the CLI prints once per run (above `--hosts`, so a
+/// distributed run carries it) and [`diagnose`] returns for the GUI and the
+/// bindings, on Hallén and the MPIE alike.
+pub fn solver_neutral_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<String> {
+    let mut out = solver_neutral_geometry_warnings(segs);
+    out.extend(overridden_source_warnings(deck, segs));
+    out
 }
 
 pub fn segment_intersection_error(segs: &[Segment]) -> Option<String> {
@@ -735,27 +747,37 @@ pub fn feedpoint_at_junction_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<S
     let mut out = Vec::new();
     // Every driven feedpoint, delta gap or current source — a current source on a
     // junction has its feed current split across the joined wires just as a
-    // voltage source does. Through the seam so an unrecognised `EX` type is not
-    // silently treated as a feedpoint, which the plane-wave-only skip allowed.
-    for (ex, _role) in crate::excitation::feedpoints(deck) {
-        if let Some((idx, _)) =
-            crate::find_deck_segment(segs, ex.tag, ex.segment).map(|i| (i, &segs[i]))
-        {
-            if junction_segs.contains(&idx) {
-                out.push(format!(
-                    "feedpoint at tag {} segment {} is on a wire junction; \
-                     the feed current splits across the joined wires, so the reported \
-                     impedance (V/I on one segment) is not accurate and may be unphysical \
-                     (junction-fed impedance is deferred — see PH9-CHK-002)",
-                    ex.tag, ex.segment
-                ));
-            }
+    // voltage source does. One per driven segment (FND-305), so two cards on one
+    // segment earn one warning, named by the first card as written.
+    for d in driven_feeds(deck, segs) {
+        if junction_segs.contains(&d.idx) {
+            let ex = d.cards[0];
+            out.push(format!(
+                "feedpoint at tag {} segment {} is on a wire junction; \
+                 the feed current splits across the joined wires, so the reported \
+                 impedance (V/I on one segment) is not accurate and may be unphysical \
+                 (junction-fed impedance is deferred — see PH9-CHK-002)",
+                ex.tag, ex.segment
+            ));
         }
     }
     out
 }
 
-/// FND-294: one warning per feedpoint on a segment at a free wire end.
+/// The deck's driven segments for a caveat: [`crate::excitation::driven_segments`],
+/// or none when a card does not resolve — the solve refuses that deck by name, so
+/// a caveat has nothing to qualify.
+fn driven_feeds<'a>(
+    deck: &'a NecDeck,
+    segs: &[Segment],
+) -> Vec<crate::excitation::DrivenSegment<'a>> {
+    crate::excitation::driven_segments(deck, segs)
+        .map(|d| d.segments)
+        .unwrap_or_default()
+}
+
+/// FND-294: one warning per feedpoint on a segment at a free wire end — and,
+/// FND-311, per network port there that carries the drive.
 ///
 /// A gap at a free end is singular in the thin-wire model: fed on segment 1 of a
 /// 5 m, 1 mm wire at 29.9 MHz, the impedance moves with the mesh in fnec and in
@@ -765,27 +787,84 @@ pub fn feedpoint_at_junction_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<S
 /// nec2c 494.0 + j107.5 → 508.1 + j87.8). A caveat, not a refusal: nec2c answers
 /// these decks and end-fed antennas are common (decision D10).
 ///
-/// Feeds only — a delta gap or a current source, through
-/// [`crate::excitation::feedpoints`]; a `TL`/`NT` port at a free end is not
-/// measured. Judged by [`crate::geometry::at_free_end`], the predicate the MPIE's
-/// refusal uses, on whichever geometry `segs` is, and with the ground the Hallén
-/// refinement used, so a base-fed monopole over a ground is not caveated.
+/// A `TL`/`NT` port on such a segment is the same gap when its network carries a
+/// feed to it — an end-fed wire through a feedline or a matching network. nec2c's
+/// own impedance at that port equals the direct end feed's to four digits at
+/// every mesh (10 m wire, 14.2 MHz, 11 → 297 segments: 1273 − j1610 … 1954 −
+/// j44452 Ω), and the source behind an `NT` diverges in both codes (fnec 673 −
+/// j1362 → 55 − j7549 Ω, nec2c 1011 − j1525 → 69 − j8376 Ω). A **passive** port
+/// does not: its network only loads the wire, its current falls as the mesh
+/// refines and the feed converges onto the deck without it (FND-311). So a port
+/// is judged when its network component — the ports joined by cards that couple
+/// them ([`crate::network::PortCard::coupled`]: a `TL`, or an `NT` with `Y12 ≠
+/// 0`) — holds a feedpoint, and is not one itself. A deck whose network cards
+/// cannot be resolved is refused by the solve; the caveat skips them.
+///
+/// Feeds are a delta gap or a current source, one per driven segment
+/// ([`crate::excitation::driven_segments`]). Judged by [`crate::geometry::at_free_end`],
+/// the predicate the MPIE's refusal uses, on whichever geometry `segs` is, and with
+/// the ground the Hallén refinement used, so a base-fed monopole over a ground is
+/// not caveated.
 pub fn free_end_feed_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<String> {
     let at_end = crate::geometry::at_free_end(segs, crate::geometry::ground_joins_wire_ends(deck));
-    crate::excitation::feedpoints(deck)
-        .filter(|(ex, _)| {
-            crate::find_deck_segment(segs, ex.tag, ex.segment).is_some_and(|i| at_end[i])
-        })
-        .map(|(ex, _)| {
+    // One per driven segment (FND-305), named by its first card as written.
+    let feeds: Vec<(u32, u32, Option<usize>)> = driven_feeds(deck, segs)
+        .into_iter()
+        .map(|d| (d.cards[0].tag, d.cards[0].segment, Some(d.idx)))
+        .collect();
+    let mut out: Vec<String> = feeds
+        .iter()
+        .filter(|(_, _, i)| i.is_some_and(|i| at_end[i]))
+        .map(|(tag, seg, _)| {
             format!(
-                "feedpoint tag {} segment {} is on a segment at a free wire end; a feed there \
+                "feedpoint tag {tag} segment {seg} is on a segment at a free wire end; a feed there \
                  is singular in the thin-wire model, so the impedance keeps changing as the \
                  mesh is refined (nec2c's does too) and is not a property of the antenna \
-                 (FND-294) — feed a segment in from the end, or model the feed's real geometry",
-                ex.tag, ex.segment
+                 (FND-294) — feed a segment in from the end, or model the feed's real geometry"
             )
         })
-        .collect()
+        .collect();
+    let Ok(cards) = crate::network::port_segments(deck, segs) else {
+        return out;
+    };
+    // Network components over the coupling cards, by union-find on segments.
+    let mut parent: std::collections::BTreeMap<usize, usize> = cards
+        .iter()
+        .flat_map(|c| [(c.seg_a, c.seg_a), (c.seg_b, c.seg_b)])
+        .collect();
+    fn root(parent: &mut std::collections::BTreeMap<usize, usize>, mut x: usize) -> usize {
+        while parent[&x] != x {
+            let up = parent[&parent[&x]];
+            parent.insert(x, up);
+            x = up;
+        }
+        x
+    }
+    for c in cards.iter().filter(|c| c.coupled) {
+        let (a, b) = (root(&mut parent, c.seg_a), root(&mut parent, c.seg_b));
+        parent.insert(a, b);
+    }
+    let ports: Vec<usize> = parent.keys().copied().collect();
+    for p in ports {
+        if !at_end[p] || feeds.iter().any(|f| f.2 == Some(p)) {
+            continue;
+        }
+        let r = root(&mut parent, p);
+        let Some((tag, seg, _)) = feeds.iter().find(|f| {
+            f.2.is_some_and(|i| parent.contains_key(&i) && root(&mut parent, i) == r)
+        }) else {
+            continue;
+        };
+        out.push(format!(
+            "network port tag {} segment {} is on a segment at a free wire end and carries the \
+             drive from feedpoint tag {tag} segment {seg} through a TL/NT network: a port there \
+             is a feed, singular in the thin-wire model, so the impedance keeps changing as the \
+             mesh is refined (nec2c's does too) and is not a property of the antenna (FND-311) — \
+             connect the network a segment in from the end",
+            segs[p].tag, segs[p].tag_index
+        ));
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -1229,7 +1308,8 @@ fn with_low_ground_remedies(
 /// centred feed (FND-224) its ports agree, but no two-feed deck over GN 2 has a nec2c
 /// reference in `R-lowground` yet — the exclusion stands on evidence, not the feed.
 pub(crate) fn mpie_low_ground_measured(deck: &NecDeck, segs: &[Segment]) -> bool {
-    if crate::feedpoints(deck).count() != 1 {
+    // One driven segment: two cards on one segment are one feed (FND-305).
+    if driven_feeds(deck, segs).len() != 1 {
         return false;
     }
     let g = crate::mpie::geometry_from_segments(segs);
@@ -2213,6 +2293,16 @@ pub fn pre_solve_error_at(
                 .map(|e| format!("{e} (at {} MHz, from {source})", f / 1e6))
         }),
     };
+    // The ports are frequency-independent; any run frequency builds them, and
+    // every one does once `network_check` has passed.
+    let multiply_fed_port = || {
+        let f = match frequencies {
+            RunFrequencies::Deck => crate::frequency::frequencies_hz(deck).first().copied(),
+            RunFrequencies::Given { hz, .. } => hz.first().copied(),
+        }?;
+        let (networks, _) = crate::network::build_networks(deck, segs, f).ok()?;
+        network_on_multiply_fed_segment_error(deck, segs, &networks.ports())
+    };
     geometry_error(deck, segs, ground)
         .or_else(|| undriven_deck_error(deck))
         .or_else(|| mixed_excitation_error(deck))
@@ -2220,6 +2310,7 @@ pub fn pre_solve_error_at(
         .or_else(|| grid_budget_error(deck))
         .or_else(frequency_check)
         .or_else(network_check)
+        .or_else(multiply_fed_port)
         .or_else(|| load_card_error(deck, segs))
         .or_else(|| plane_wave_over_ground_error(deck, segs, ground))
 }
@@ -2262,6 +2353,102 @@ pub fn network_card_error(deck: &NecDeck, segs: &[Segment]) -> Option<String> {
     crate::frequency::frequencies_hz(deck)
         .into_iter()
         .find_map(|f| crate::network::build_networks(deck, segs, f).err())
+}
+
+/// An `EX` voltage, as a warning quotes it: `1 V`, `0.5 V`, `(1 + j0.5) V`.
+fn volts_text(v: Complex64) -> String {
+    if v.im == 0.0 {
+        format!("{} V", v.re)
+    } else {
+        let sign = if v.im < 0.0 { '-' } else { '+' };
+        format!("({} {sign} j{}) V", v.re, v.im.abs())
+    }
+}
+
+/// An `EX` card's address as written: `EX 0 1 11`, or `EX 0 0 11` for a tag-0
+/// spelling (FND-282).
+fn ex_card_text(ex: &ExCard) -> String {
+    format!("EX {} {} {}", ex.excitation_type, ex.tag, ex.segment)
+}
+
+/// FND-305: one warning per `EX 0` card NEC-2 overrides — an earlier type-0 card
+/// on a segment a later type-0 card also names. nec2c assigns each type-0 card's
+/// field to its segment (`matrix.c:748`), so only the last drives it; fnec
+/// summed them, and solved the measured deck at 1.5 V where nec2c's is 0.5 V.
+/// fnec now drives the segment as NEC-2 does, and this says so, because a deck
+/// author who wrote two cards may have meant either.
+///
+/// Derived from [`crate::excitation::driven_segments`]' own `overridden` list —
+/// the list the drive is built from — never from a second count of cards, so the
+/// warning and the drive cannot disagree. The card is quoted as written, the
+/// segment as resolved. A deck whose cards do not resolve earns none: the solve
+/// refuses it by name.
+pub fn overridden_source_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<String> {
+    let Ok(driven) = crate::excitation::driven_segments(deck, segs) else {
+        return Vec::new();
+    };
+    driven
+        .overridden()
+        .map(|(d, lost, won)| {
+            let seg = &segs[d.idx];
+            let type0 = d.overridden.len() + 1;
+            let card_v = |ex: &ExCard| Complex64::new(ex.voltage_real, ex.voltage_imag);
+            let sum: Complex64 = d
+                .overridden
+                .iter()
+                .map(|(c, _)| card_v(c))
+                .sum::<Complex64>()
+                + card_v(won);
+            format!(
+                "EX: tag {} segment {} carries {type0} voltage-source cards of type 0 \
+                 (`{}` {}, then `{}` {}). NEC-2 applies only the last, so the {} card \
+                 drives nothing and has no FEEDPOINTS row; the segment is solved at {}. \
+                 Delete the earlier card, or put the sum on one card if a {} type-0 drive \
+                 was meant (FND-305)",
+                seg.tag,
+                seg.tag_index,
+                ex_card_text(lost),
+                volts_text(card_v(lost)),
+                ex_card_text(won),
+                volts_text(card_v(won)),
+                volts_text(card_v(lost)),
+                volts_text(d.volts),
+                volts_text(sum),
+            )
+        })
+        .collect()
+}
+
+/// FND-305, decision U3: refuse a `TL`/`NT` port on a segment more than one `EX`
+/// card drives. nec2c has no consistent answer there: it prices the network from
+/// the FIRST card on the port segment (`network.c:303-318`) and drives the
+/// structure with the LAST (`matrix.c:748`), so its currents match neither
+/// card's deck (measured: 9.33e-3 + j9.41e-3 A against 6.69e-3 + j4.57e-3 and
+/// 1.34e-2 + j9.13e-3, with 2.3 mW of NETWORK LOSS on a lossless line). With no
+/// reference to gate against, the deck is refused rather than solved.
+///
+/// `ports` are the network's port segments, as `network::Networks::ports` yields
+/// them — the one answer to "which segment is a port". The drive is the owner's
+/// ([`crate::excitation::driven_segments`]).
+pub fn network_on_multiply_fed_segment_error(
+    deck: &NecDeck,
+    segs: &[Segment],
+    ports: &[usize],
+) -> Option<String> {
+    let driven = crate::excitation::driven_segments(deck, segs).ok()?;
+    driven.iter().find_map(|d| {
+        let cards = d.cards.len() + d.overridden.len();
+        (cards > 1 && ports.contains(&d.idx)).then(|| {
+            format!(
+                "TL/NT: a port on tag {} segment {}, which carries {cards} voltage-source \
+                 cards. NEC-2 prices the network from the first card's voltage and drives \
+                 the structure with the last, so nec2c's answer for this deck mixes two \
+                 drives and fnec has no reference for it (FND-305). Put one EX card on the \
+                 segment",
+                segs[d.idx].tag, segs[d.idx].tag_index
+            )
+        })
+    })
 }
 
 /// Every frontend-independent diagnostic for a solve, errors first.
@@ -2310,7 +2497,7 @@ pub fn diagnose(
     for w in superseded_frequency_warnings(deck) {
         out.push(ValidationDiagnostic::warning(w));
     }
-    for w in solver_neutral_geometry_warnings(segs) {
+    for w in solver_neutral_warnings(deck, segs) {
         out.push(ValidationDiagnostic::warning(w));
     }
 

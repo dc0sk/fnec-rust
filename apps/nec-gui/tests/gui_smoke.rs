@@ -1840,6 +1840,27 @@ fn solve_a_free_end_feed_carries_its_caveat() {
     );
 }
 
+/// FND-311: the GUI carries the driven-port caveat too, from the same producer;
+/// the same feedline with its port in from the end carries none.
+#[test]
+fn solve_a_port_driven_at_a_free_end_carries_its_caveat() {
+    let deck = |port: u32| {
+        format!(
+            "GW 1 11 0 0 -5 0 0 5 0.001\nGW 3 5 100 0 -0.25 100 0 0.25 0.001\nGE 0\n\
+             EX 0 3 3 0 1 0\nTL 1 {port} 3 3 50 3.0 0 0 0 0\nFR 0 1 0 0 14.2 0\nEN\n"
+        )
+    };
+    let driven = |port| {
+        solve_deck_str(&deck(port), nec_gui::solve::SolverKind::Hallen)
+            .expect("solves")
+            .warnings
+            .iter()
+            .any(|w| w.contains("carries the drive from feedpoint"))
+    };
+    assert!(driven(1), "the free-end port is not caveated");
+    assert!(!driven(3), "the interior port is caveated");
+}
+
 /// A runaway sweep (mistyped tiny step over a wide range) is rejected before it
 /// can queue millions of solves and freeze the GUI.
 #[test]
@@ -2541,6 +2562,83 @@ fn a_deck_with_two_current_sources_is_refused_on_both_gui_paths() {
             "the {label} path must give the shared reason, got: {msg}"
         );
     }
+}
+
+/// FND-305 on the GUI: two `EX 0` cards on one segment drive it with the last.
+/// The solve path carries the override warning, and the pattern path's gain is
+/// the one-card (0.5 V) deck's — normalised by the power the applied drive
+/// delivers, not by one term per card. Z is drive-independent, so it is checked
+/// only for agreement with the one-card deck, not as the discriminator.
+#[test]
+fn two_ex_cards_on_one_segment_drive_it_with_the_last_on_both_gui_paths() {
+    let deck = |cards: &str| {
+        format!("CE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\n{cards}FR 0 1 0 0 14.2 0\nEN\n")
+    };
+    let two = deck("EX 0 1 11 0 1 0\nEX 0 1 11 0 0.5 0\n");
+    let half = deck("EX 0 1 11 0 0.5 0\n");
+    let kind = nec_gui::solve::SolverKind::Hallen;
+    let s_two = nec_gui::solve::solve_deck_str(&two, kind).expect("solves");
+    let s_half = nec_gui::solve::solve_deck_str(&half, kind).expect("solves");
+    assert!(
+        (s_two.z_re - s_half.z_re).abs() < 1e-9 && (s_two.z_im - s_half.z_im).abs() < 1e-9,
+        "{} {} vs {} {}",
+        s_two.z_re,
+        s_two.z_im,
+        s_half.z_re,
+        s_half.z_im
+    );
+    assert!(
+        s_two
+            .warnings
+            .iter()
+            .any(|w| w.contains("NEC-2 applies only the last")),
+        "{:?}",
+        s_two.warnings
+    );
+    assert!(
+        !s_half
+            .warnings
+            .iter()
+            .any(|w| w.contains("NEC-2 applies only the last")),
+        "{:?}",
+        s_half.warnings
+    );
+    let peak = |text: &str| {
+        nec_gui::solve::pattern_slice_deck_str(text, 0.0, kind)
+            .expect("pattern")
+            .iter()
+            .map(|p| p.gain_total_dbi)
+            .fold(f64::MIN, f64::max)
+    };
+    let (g_two, g_half) = (peak(&two), peak(&half));
+    assert!((g_two - g_half).abs() < 1e-9, "gain {g_two} vs {g_half}");
+}
+
+/// FND-305 (U3): a TL port on a segment two `EX` cards drive is refused on both
+/// GUI paths — nec2c's answer there mixes the two drives, so there is none to
+/// gate against.
+#[test]
+fn a_network_port_on_a_doubly_fed_segment_is_refused_on_both_gui_paths() {
+    let deck = "CE\nGW 1 21 0 0 -2.5 0 0 2.5 0.001\nGW 2 21 1 0 -2.5 1 0 2.5 0.001\nGE 0\n\
+                EX 0 1 11 0 1 0\nEX 0 1 11 0 0.5 0\nTL 1 11 2 11 50 0 0 0 0 0\n\
+                FR 0 1 0 0 29.9 0\nEN\n";
+    let kind = nec_gui::solve::SolverKind::Hallen;
+    let solve = nec_gui::solve::solve_deck_str(deck, kind);
+    let pattern = nec_gui::solve::pattern_slice_deck_str(deck, 0.0, kind);
+    for (label, err) in [
+        ("solve", solve.err()),
+        ("pattern", pattern.err().map(|e| e.to_string())),
+    ] {
+        let msg = err.unwrap_or_else(|| panic!("the {label} path must refuse this deck"));
+        assert!(
+            msg.contains("TL/NT: a port on tag 1 segment 11"),
+            "the {label} path must give the shared reason, got: {msg}"
+        );
+    }
+    // Control: one card with the same line solves on both paths.
+    let one = deck.replace("EX 0 1 11 0 1 0\n", "");
+    nec_gui::solve::solve_deck_str(&one, kind).expect("one card solves");
+    nec_gui::solve::pattern_slice_deck_str(&one, 0.0, kind).expect("one card's pattern");
 }
 
 /// FND-114 — the same gate for a CURRENT source, which the voltage-drive test
@@ -3712,6 +3810,32 @@ fn a_one_point_gui_sweep_is_allowed_in_the_tab_and_the_job() {
         SolverKind::Hallen
     )
     .is_err());
+}
+
+/// FND-316: a step below the range's resolution is refused by name in both the
+/// tab and the job, which share one message.
+#[test]
+fn a_gui_sweep_step_below_the_resolution_is_refused_in_the_tab_and_the_job() {
+    use nec_gui::solve::{SolverKind, SweepJob};
+    let mut st = AppState::default();
+    st.sweep_start = "1000".into();
+    st.sweep_end = "1000.000000000001".into();
+    st.sweep_step = "1e-13".into();
+    let err = st.sweep_params().expect_err("refused in the tab");
+    assert!(err.contains("below the resolution"), "{err}");
+    let err = SweepJob::prepare(
+        &reference_dipole("FR 0 1 0 0 14.2 0\n"),
+        1000.0,
+        1000.000000000001,
+        1e-13,
+        SolverKind::Hallen,
+    )
+    .err()
+    .expect("refused in the job");
+    assert!(
+        err.contains("step_mhz (0.0000000000001)") && err.contains("below the resolution"),
+        "{err}"
+    );
 }
 
 /// FND-297 c: the sweep expands its range through the shared expander, so the

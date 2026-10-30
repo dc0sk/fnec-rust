@@ -399,8 +399,15 @@ fed on segment 1 at 29.9 MHz reads 1839 − j1839 / 1244 − j5690 / 746 − j11
 11 / 33 / 99 segments (nec2c 3078 − j1554 / 2793 − j8345 / 1701 − j17519). Feed a
 segment in from the end, or model the feed's real geometry. A base-fed monopole on
 `GN 1` is not at a free end and gets no warning (on `GN 0`/`2` the contact is
-refused, FND-240); a `TL` or `NT`
-port at a free end is not judged.
+refused, FND-240).
+
+A **`TL` or `NT` port on a free-end segment that its network drives** — an end-fed
+wire through a feedline or a matching network, the feed on the network's other
+port (or on a port a chain of coupling networks reaches) — is the same gap, and
+warns the same way, naming the port and the feed (FND-311): nec2c's impedance at
+such a port equals a direct end feed's at every mesh. A passive port, whose
+network carries no feed, converges and is not caveated; nor is an `NT` with
+`Y12 = 0`, which couples nothing.
 
 The `--allow-noncollinear-hallen` flag is a no-op: it was the opt-in for the
 experimental non-collinear path before that path became the default, and is now
@@ -585,11 +592,11 @@ Formatting and ordering rules:
 
 - Fixed-point numeric formatting with 6 decimals
 - Exactly 8 whitespace-separated numeric columns per data row
-- One data row per driven segment (zero-excitation segments skipped)
+- One data row per driven segment (zero-excitation segments skipped). A segment named by several `EX` cards is driven as NEC-2 drives it: the **last** type-0 card, plus every type-5 card (nec2c assigns a type-0 card's field and adds a type-5 card's). An overridden card has no row and earns a `warning:` naming it and the drive applied; `N_SOURCES` still counts every card (FND-305; fnec summed the cards until then, solving `EX 0 1 11 0 1 0` + `EX 0 1 11 0 0.5 0` at 1.5 V where NEC-2 drives 0.5 V — the same Z, three times the current and power). A `TL` or `NT` port on a segment more than one card drives is refused: nec2c prices that network from the first card and drives the structure with the last, an answer matching neither. The power that normalises the gain (and NEC-2D's POWER BUDGET) is the applied drive's; nec2c's INPUT POWER on a deck with an overridden card sums one row per card (×2 for two equal cards) and its gain inherits that — the one place fnec's number knowingly differs from nec2c's, which matches the deck with the overridden card deleted
 - `SOURCES` appears when one or more `EX` cards are present, with source definitions in deck/card order
 - `LOADS` appears when one or more `LD` cards are present, with load definitions in deck/card order
 - `SWEEP_POINTS` is emitted once, after the last per-frequency report block, on every multi-frequency text run — one row per solved point, so a sweep can be read without parsing each block. It is pinned by `apps/nec-cli/tests/report_contract.rs`; this guide simply never mentioned it (FND-086).
-- `INPUT_IMPEDANCE` is NEC-2's INPUT IMPEDANCE DATA table (FND-309), emitted once after `SWEEP_POINTS` when the last voltage-source `EX` card (type 0 or 5) has I4's units digit 1 and the run solved two or more frequencies — nec2c prints no table for one, and the rule is on the solved points, so `--sweep-config` decides it as it decides the sweep. Each point's impedance (`Z_ABS`, and `Z_PHASE_DEG` in degrees) and the same impedance divided by `NORMALIZATION_OHMS` (`ZN_*`, in E notation; the phase is not normalized): that card's F3 when F3 > 0 (`NORMALIZED_TO F3`), otherwise the largest `|Z|` of the sweep (`NORMALIZED_TO MAX`). The source is nec2c's: the last `EX 5`, or else the last `EX 0` — not necessarily the card carrying the digit, and not necessarily `SWEEP_POINTS`'s row, which is always the first feedpoint (on a deck fed `EX 0 1 …` then `EX 0 2 …`, `SWEEP_POINTS` lists tag 1 and `INPUT_IMPEDANCE` tag 2). `SOURCE_SEGMENT` is the absolute segment number nec2c's header prints. A deck with several `FR` cards solves the last (see the superseded-FR warning), so fnec prints one table where nec2c prints one per `FR`. Omitted, with a warning naming the failed frequency, when a point fails. A units digit of 2–9, or units 1 with a negative F3, is refused: NEC-2 does not define them. `--output-format json` warns that the table has no JSON form yet; `--output-format nec2d` refuses the deck; the GUI and `fnec_py` do not carry it
+- `INPUT_IMPEDANCE` is NEC-2's INPUT IMPEDANCE DATA table (FND-309), emitted once after `SWEEP_POINTS` when the last voltage-source `EX` card (type 0 or 5) has I4's units digit 1 and the run solved two or more frequencies — nec2c prints no table for one, and the rule is on the solved points, so `--sweep-config` decides it as it decides the sweep. Each point's impedance (`Z_ABS`, and `Z_PHASE_DEG` in degrees) and the same impedance divided by `NORMALIZATION_OHMS` (`ZN_*`, in E notation; the phase is not normalized): that card's F3 when F3 > 0 (`NORMALIZED_TO F3`), otherwise the largest `|Z|` of the sweep (`NORMALIZED_TO MAX`). The source is nec2c's: the last `EX 5`, or else the last `EX 0` — found by the segment it resolves to, so an overridden card earlier in the deck does not shift it (FND-305) — not necessarily the card carrying the digit, and not necessarily `SWEEP_POINTS`'s row, which is always the first feedpoint (on a deck fed `EX 0 1 …` then `EX 0 2 …`, `SWEEP_POINTS` lists tag 1 and `INPUT_IMPEDANCE` tag 2). `SOURCE_SEGMENT` is the absolute segment number nec2c's header prints. A deck with several `FR` cards solves the last (see the superseded-FR warning), so fnec prints one table where nec2c prints one per `FR`. Omitted, with a warning naming the failed frequency, when a point fails. A units digit of 2–9, or units 1 with a negative F3, is refused: NEC-2 does not define them. `--output-format json` carries it as each record's `input_impedance` (FND-314, see `docs/json-output-schema.md`); `--output-format nec2d` refuses the deck; the GUI and `fnec_py` do not carry it
 - `RADIATION_PATTERN` appears only when at least one `RP` card is present in the deck
 - `RADIATION_PATTERN` gains (`GAIN_DB`, `GAIN_V_DB`, `GAIN_H_DB`) are **gain** in dBi, not directivity: the directivity scaled by the radiation efficiency η = P_radiated / P_input, so the power lost in lossy loads (`LD` or `--loads-config`), lossy networks and a lossy ground all count, over every ground (FND-200)
 - `NORMALIZED_PATTERN` appears when an `RP` card's `XNDA` field requests normalization (non-zero `N`, hundreds, digit, as nec2c splits XNDA; the `X` digit that every 4nec2 deck sets with `1000` picks only nec2c's column labels — fnec before 0.26 read it as normalize, FND-298); `GAIN_NORM_DB` is the total gain relative to the pattern peak (0 dB)
@@ -806,7 +813,9 @@ A range expands to `start_mhz + i·step_mhz` — as an `FR` card does — for
 (ε = 2.2e-16): the end is included when it is on the grid to within rounding,
 so `29.9 … 30.0 by 0.1` is two points and `1000 … 1000.001 by 1e-7` is 10 001,
 while an end typed short of the grid is not reached (`1 … 1.99999 by 0.1` is 10).
-`start_mhz = end_mhz` is one point. More than 100 000 points is refused. The GUI's
+`start_mhz = end_mhz` is one point. More than 100 000 points is refused, and so is
+a step below the range's resolution, 8ε·max(|start|, |end|) — about 1.8e-12 MHz at
+1000 MHz — where the points would not be distinct (FND-316). The GUI's
 sweep tab expands its range by the same rule. The checks that read frequencies —
 usable values, and a `TL`/`NT` that cannot be built at one of them — read this
 list, not the deck's `FR`; such a refusal ends `(at 30 MHz, from --sweep-config)`.
@@ -1154,7 +1163,7 @@ Missing trailing fields default to 0 as in NEC, except F7 (default 1). Example: 
 
 Validated against nec2c: `TL 1 26 2 26 50.0 0.1` across two λ/2 dipoles 1 m apart, fed on wire 1 at 14.2 MHz → fnec 84.05+j28.65 Ω, nec2c 84.826+j31.131 Ω.
 
-**Refused (errors, not warnings):** an unusable TL/NT card (missing segment, fewer than 10 NT fields, non-numeric field, Z₀ = 0, velocity factor ≤ 0, loss < 0, electrical length a multiple of λ/2); a network with a non-Hallén solver ("supported on --solver hallen only"; MPIE also rejects TL/NT); a network with a plane-wave or current-source drive (voltage/delta-gap sources only). The GPU-resident path declines any deck with TL/NT, which then solves on the CPU.
+**Refused (errors, not warnings):** an unusable TL/NT card (missing segment, fewer than 10 NT fields, non-numeric field, Z₀ = 0, velocity factor ≤ 0, loss < 0, electrical length a multiple of λ/2); a network with a non-Hallén solver ("supported on --solver hallen only"; MPIE also rejects TL/NT); a network with a plane-wave or current-source drive (voltage/delta-gap sources only). A port on a segment more than one `EX` card drives (FND-305): nec2c prices the network from the first card's voltage and drives the structure with the last, so its answer mixes two drives and there is no reference to solve against — put one `EX` card on the segment. The GPU-resident path declines any deck with TL/NT, which then solves on the CPU.
 
 ## Notes
 
