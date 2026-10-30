@@ -102,6 +102,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/sweep_partial_output.rs` | 2 | A sweep prints the points it computed, even when one of them fails. | FND-033 |
 | `apps/nec-cli/tests/tag_zero_nec2c.rs` | 10 | FND-282 / FND-299 — tag 0 names an absolute segment number, as nec2c reads it: `EX`, `LD` (single, a range across two wires, type 5), `TL`/`NT` ports and `PT` ranges with tag 0 equal the tagged cards naming the same segments to round-off, on Hallén, sinusoidal, the MPIE and the worker, through `GM`/`GR`/`GX` copies, the refined free ends' flanks and the PEC image problem and NEC-2D's "loaded twice" note, each within the Hallén band of nec2c 1.3.1; the ranges and references NEC-2 cannot read are refused by name | FND-282, FND-299 |
 | `apps/nec-cli/tests/taper_cli.rs` | 2 | `fnec taper` — the Leeson step-tapered-radius correction (BL-IMPR-014). | — |
+| `apps/nec-cli/tests/temp_deck_contract.rs` | 2 | FND-319 — `common::TempDeck` owns its paths' uniqueness: two guards with one name are two files that each read their own body and survive each other's drop; a guard refuses to replace an existing file (`AlreadyExists`). | FND-319 |
 | `apps/nec-cli/tests/template_contract.rs` | 5 | TOML/JSON var substitution; undefined-token error | PH3-CHK-007 |
 | `apps/nec-cli/tests/tl_cards.rs` | 5 | NEC-2 `TL` card matches nec2c; retired fnec layout refused with the NEC-2 rewrite; integer-valued NEC-2 card not mistaken for the old layout; zero length = segment-centre distance; non-Hallén solver refused | PRT-002, PH2-CHK-003 |
 | `apps/nec-cli/tests/topology_caveat_reach.rs` | 2 | FND-272 — the topology caveats are reached on the experimental bases, and not by a receiving junction on PEC ground | — |
@@ -175,7 +176,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=973 --> **973** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=975 --> **975** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -200,7 +201,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=743 --> **743** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1723 --> **1723** = 743 unit + 973 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1725 --> **1725** = 743 unit + 975 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
