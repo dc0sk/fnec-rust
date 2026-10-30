@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
-  "generated_at": "2026-10-30T03:09:51Z",
-  "git_sha": "5c0a4cf",
+  "generated_at": "2026-10-30T03:54:30Z",
+  "git_sha": "0731b30",
   "runner_nproc": 4,
   "runs": [
     {
@@ -44,7 +44,7 @@
       "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
-      "elapsed_ms": 121
+      "elapsed_ms": 65
     },
     {
       "deck": "dipole-freesp-51seg",
@@ -68,7 +68,7 @@
       "deck": "dipole-freesp-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-single",
-      "elapsed_ms": 3
+      "elapsed_ms": 4
     },
     {
       "deck": "dipole-freesp-51seg",
@@ -134,7 +134,7 @@
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "cpu-multi",
-      "elapsed_ms": 5
+      "elapsed_ms": 6
     },
     {
       "deck": "dipole-ground-51seg",
@@ -146,13 +146,13 @@
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "cpu-multi",
-      "elapsed_ms": 5
+      "elapsed_ms": 6
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
-      "elapsed_ms": 5
+      "elapsed_ms": 6
     },
     {
       "deck": "dipole-ground-51seg",
@@ -245,17 +245,17 @@
       "solver": "hallen",
       "exec_mode": "gpu",
       "n_runs": 3,
-      "avg_ms": 43,
+      "avg_ms": 25,
       "min_ms": 5,
-      "max_ms": 121
+      "max_ms": 65
     },
     {
       "deck": "dipole-freesp-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-single",
       "n_runs": 3,
-      "avg_ms": 3,
-      "min_ms": 3,
+      "avg_ms": 4,
+      "min_ms": 4,
       "max_ms": 4
     },
     {
@@ -292,7 +292,7 @@
       "n_runs": 3,
       "avg_ms": 5,
       "min_ms": 5,
-      "max_ms": 5
+      "max_ms": 6
     },
     {
       "deck": "dipole-ground-51seg",
@@ -301,7 +301,7 @@
       "n_runs": 3,
       "avg_ms": 5,
       "min_ms": 5,
-      "max_ms": 5
+      "max_ms": 6
     },
     {
       "deck": "dipole-ground-51seg",
