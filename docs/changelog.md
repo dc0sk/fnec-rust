@@ -455,7 +455,9 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   PR. `scripts/check-findings-ledger.py` fails on a cited commit that is not an
   ancestor of HEAD unless `(#N)` follows it, and refuses a shallow clone rather
   than pass it; its self-test, `scripts/test-check-findings-ledger.py`, runs in
-  `check-all.sh` and CI.
+  `check-all.sh` and CI. A `fixed` row must also cite a PR number: a commit
+  hash alone no longer satisfies it, since a hash on `main` can be the base the
+  fix was measured on (FND-310's row passed on one).
 
 ## [0.25.0] — 2026-10-22 — Where wires meet
 

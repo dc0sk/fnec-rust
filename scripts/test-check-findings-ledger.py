@@ -9,6 +9,11 @@ cites commits in is planted here with a hash that is NOT on HEAD and must fail;
 the same phrasing with an ancestor, or with `(#N)` after a dead hash, must pass;
 and a shallow clone or a directory outside git must exit 2, not 0.
 
+A `fixed` row must also carry a PR number: a hash alone, even an ancestor, is
+not a citation of the fix (FND-310's row passed on its measurement base). So the
+phrasing cases below end in `; #1.`, to test the ancestry rule on its own, and
+the rows that owe a PR and carry only a data-shaped hash must fail.
+
 Run: python3 scripts/test-check-findings-ledger.py
 """
 
@@ -87,13 +92,14 @@ with tempfile.TemporaryDirectory() as d:
         "Reproduced on `{h}`.",
         "fixed in {h}.",
     ]
+    phrasings = [p + "; #1." for p in phrasings]
     for p in phrasings:
         expect(f"fail: non-ancestor in {p!r}", repo, p.format(h=off_main), 1)
         expect(f"fail: missing commit in {p!r}", repo, p.format(h=dead), 1)
         expect(f"pass: ancestor in {p!r}", repo, p.format(h=on_main), 0)
-    expect("fail: all-digit missing hash", repo, f"fixed in {digits} (this PR).", 1)
+    expect("fail: all-digit missing hash", repo, f"fixed in {digits} (this PR); #1.", 1)
     expect("fail: full 40-hex non-ancestor", repo,
-           f"fixed in {git(repo, 'rev-parse', off_main)}.", 1)
+           f"fixed in {git(repo, 'rev-parse', off_main)}; #1.", 1)
 
     # A dead hash that carries its PR number (known-pass).
     expect("pass: dead hash (#N)", repo, f"Fixed in {dead} (#12).", 0)
@@ -104,6 +110,14 @@ with tempfile.TemporaryDirectory() as d:
     expect("pass: PR only", repo, "Fixed in #12 (this PR).", 0)
     # #N far from the hash does not excuse it.
     expect("fail: #N not attached", repo, f"Fixed in {dead} (this PR), see #12.", 1)
+
+    # A fixed row whose only hash is data, or an ancestor with no PR (known-fail).
+    expect("fail: fixed, the hash is the measurement base", repo,
+           f"**FIXED (this PR)** by deleting the copy; agreed on main {on_main}.", 1)
+    expect("fail: fixed in an ancestor, no PR", repo, f"Fixed in {on_main}.", 1)
+    expect("pass: the same with (#N)", repo,
+           f"**FIXED (this PR)** by deleting the copy; agreed on main {on_main} (#12).", 0)
+    expect("pass: ancestor; #N", repo, f"Fixed in {on_main}; #12.", 0)
 
     # Not commit citations (known-pass): prose mentions and numbers.
     expect("pass: prose list", repo, f"says NONE of {dead}, {off_main} or {dead} is reachable; #1.", 0)
