@@ -66,14 +66,116 @@ pub struct SweepSections {
     pub warnings: Vec<String>,
 }
 
-/// Render `SWEEP_POINTS` (for two or more points) and, when `request` asks for
-/// it, `INPUT_IMPEDANCE`.
+/// The input-impedance table one sweep prints: which feedpoint, divided by what,
+/// and that feedpoint's row at every point. Text renders it as `INPUT_IMPEDANCE`,
+/// JSON as each record's `input_impedance` (FND-314), so the two cannot pick a
+/// different source or factor.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InputImpedanceTable {
+    /// Index into each point's [`SweepPoint::feeds`] of the row on the request's
+    /// segment: the rows are one per driven segment (FND-305), in the same order
+    /// at every point.
+    pub feed_index: usize,
+    /// The divisor, ohms.
+    pub factor: f64,
+    /// `"F3"` (fixed) or `"MAX"` (the sweep's largest |Z|).
+    pub normalized_to: &'static str,
+    /// The chosen feedpoint at every point, in the sweep's order.
+    pub chosen: Vec<SweepFeed>,
+}
+
+impl InputImpedanceTable {
+    /// The source the table follows, as its header names it.
+    pub fn source(&self) -> SweepFeed {
+        self.chosen[0]
+    }
+
+    /// The `i`-th point's impedance divided by the factor. Only the magnitude is
+    /// normalized; the phase is Z's own, as nec2c prints it.
+    pub fn normalized(&self, i: usize) -> Complex64 {
+        self.chosen[i].z / self.factor
+    }
+}
+
+/// What a sweep's input-impedance print comes to.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InputImpedanceOutcome {
+    /// Nothing to print and nothing to say: not requested, or a single point
+    /// (nec2c prints no table for one frequency).
+    NoTable,
+    /// Requested and not printed, with the warning that says why.
+    Omitted(String),
+    Table(InputImpedanceTable),
+}
+
+/// The deck's input-impedance table over `points`, or why there is none — the
+/// one decision both renderings take.
 ///
-/// The table is printed only for two or more solved points — nec2c prints none
-/// for a single frequency — and never over a partial sweep: with any point in
-/// `failed_mhz` it is omitted with a warning naming the failed frequencies, as a
-/// largest-|Z| factor over the points that solved is not nec2c's factor and a
-/// short table reads as complete.
+/// Never over a partial sweep: with any point in `failed_mhz` it is omitted with
+/// a warning naming the failed frequencies, as a largest-|Z| factor over the
+/// points that solved is not nec2c's factor and a short table reads as complete.
+/// That is checked before the single-point silence, so a two-point sweep that
+/// lost one warns.
+pub fn input_impedance_table(
+    points: &[SweepPoint],
+    request: Option<InputImpedanceRequest>,
+    failed_mhz: &[f64],
+) -> InputImpedanceOutcome {
+    let Some(request) = request else {
+        return InputImpedanceOutcome::NoTable;
+    };
+    if !failed_mhz.is_empty() {
+        let list = failed_mhz
+            .iter()
+            .map(|f| format!("{f:.6}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return InputImpedanceOutcome::Omitted(format!(
+            "EX I4's input-impedance print (INPUT_IMPEDANCE) omitted: the point(s) at {list} \
+             MHz failed, and a table over a partial sweep is not the one NEC-2 prints"
+        ));
+    }
+    if points.len() < 2 {
+        // nec2c prints no table for a single frequency (main.c, nfrq == 1).
+        return InputImpedanceOutcome::NoTable;
+    }
+    let row = |p: &SweepPoint| p.feeds.iter().position(|f| f.abs_seg == request.abs_seg);
+    let Some(feed_index) = points.first().and_then(row) else {
+        return no_row(request);
+    };
+    let Some(chosen) = points
+        .iter()
+        .map(|p| (row(p) == Some(feed_index)).then(|| p.feeds[feed_index]))
+        .collect::<Option<Vec<SweepFeed>>>()
+    else {
+        return no_row(request);
+    };
+    let (factor, normalized_to) = match request.norm {
+        InputImpedanceNorm::Fixed(f) => (f, "F3"),
+        InputImpedanceNorm::Max => (
+            chosen.iter().map(|f| f.z.norm()).fold(0.0_f64, f64::max),
+            "MAX",
+        ),
+    };
+    InputImpedanceOutcome::Table(InputImpedanceTable {
+        feed_index,
+        factor,
+        normalized_to,
+        chosen,
+    })
+}
+
+/// The warning for a point with no feedpoint row on the requested segment.
+fn no_row(request: InputImpedanceRequest) -> InputImpedanceOutcome {
+    InputImpedanceOutcome::Omitted(format!(
+        "EX I4's input-impedance print (INPUT_IMPEDANCE) omitted: a point has no \
+         feedpoint row on segment {} to report",
+        request.abs_seg
+    ))
+}
+
+/// Render `SWEEP_POINTS` (for two or more points) and, when `request` asks for
+/// it, `INPUT_IMPEDANCE` ([`input_impedance_table`] decides whether, and what).
 pub fn render_sweep_sections(
     points: &[SweepPoint],
     request: Option<InputImpedanceRequest>,
@@ -95,50 +197,15 @@ pub fn render_sweep_sections(
             }
         }
     }
-    let Some(request) = request else {
-        return out;
+    let table = match input_impedance_table(points, request, failed_mhz) {
+        InputImpedanceOutcome::NoTable => return out,
+        InputImpedanceOutcome::Omitted(w) => {
+            out.warnings.push(w);
+            return out;
+        }
+        InputImpedanceOutcome::Table(t) => t,
     };
-    if !failed_mhz.is_empty() {
-        let list = failed_mhz
-            .iter()
-            .map(|f| format!("{f:.6}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        out.warnings.push(format!(
-            "EX I4's input-impedance print (INPUT_IMPEDANCE) omitted: the point(s) at {list} \
-             MHz failed, and a table over a partial sweep is not the one NEC-2 prints"
-        ));
-        return out;
-    }
-    if points.len() < 2 {
-        // nec2c prints no table for a single frequency (main.c, nfrq == 1).
-        return out;
-    }
-    let Some(chosen) = points
-        .iter()
-        .map(|p| {
-            p.feeds
-                .iter()
-                .find(|f| f.abs_seg == request.abs_seg)
-                .copied()
-        })
-        .collect::<Option<Vec<SweepFeed>>>()
-    else {
-        out.warnings.push(format!(
-            "EX I4's input-impedance print (INPUT_IMPEDANCE) omitted: a point has no \
-             feedpoint row on segment {} to report",
-            request.abs_seg
-        ));
-        return out;
-    };
-    let (factor, label) = match request.norm {
-        InputImpedanceNorm::Fixed(f) => (f, "F3"),
-        InputImpedanceNorm::Max => (
-            chosen.iter().map(|f| f.z.norm()).fold(0.0_f64, f64::max),
-            "MAX",
-        ),
-    };
-    let src = chosen[0];
+    let src = table.source();
     out.text.push('\n');
     out.text.push_str("INPUT_IMPEDANCE\n");
     out.text.push_str(&format!(
@@ -146,15 +213,14 @@ pub fn render_sweep_sections(
         src.tag, src.seg, src.abs_seg
     ));
     out.text.push_str(&format!(
-        "NORMALIZATION_OHMS {factor:.6} NORMALIZED_TO {label}\n"
+        "NORMALIZATION_OHMS {:.6} NORMALIZED_TO {}\n",
+        table.factor, table.normalized_to
     ));
     out.text.push_str(&format!("N_POINTS {}\n", points.len()));
     out.text
         .push_str("FREQ_MHZ Z_RE Z_IM Z_ABS Z_PHASE_DEG ZN_RE ZN_IM ZN_ABS\n");
-    for (p, f) in points.iter().zip(&chosen) {
-        // Only the magnitude is normalized; the phase is Z's own, as nec2c
-        // prints it.
-        let zn = f.z / factor;
+    for (i, (p, f)) in points.iter().zip(&table.chosen).enumerate() {
+        let zn = table.normalized(i);
         out.text.push_str(&format!(
             "{:.6} {:.6} {:.6} {:.6} {:.6} {:.6e} {:.6e} {:.6e}\n",
             p.freq_mhz,
