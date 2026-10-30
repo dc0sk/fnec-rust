@@ -172,6 +172,18 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   duplicate frequencies, for 11. The new `RangeError::StepBelowResolution`
   names the step and the resolution. `FR` cards are unchanged: their count is
   written on the card, and nec2c runs a zero or tiny step as repeated points.
+- **A `TL`/`NT` port on a free-end segment that its network drives is caveated**
+  as a free-end feed (FND-311): an end-fed wire through a feedline or a matching
+  network solved with exit 0 and no word, while the same wire fed directly on its
+  end segment warns (FND-294). nec2c's impedance at such a port equals the direct
+  end feed's to four digits at every mesh (a 10 m wire at 14.2 MHz, 11 → 297
+  segments), and the source behind an `NT` diverges in both codes (fnec 673 −
+  j1362 → 55 − j7549 Ω, nec2c 1011 − j1525 → 69 − j8376 Ω). A port is judged when
+  its network component — the ports joined by a `TL`, or an `NT` with `Y12 ≠ 0` —
+  holds a feed; a passive port, whose current falls as the mesh refines, is not.
+  Every Hallén route prints it, through the same producer as FND-294's caveat.
+  The port resolution is now one function (`tl::resolve_ports`) that the solve
+  and the caveat share.
 
 - **The GUI's sweep and the distributed worker check the frequencies they run,
   not the deck's `FR`** (FND-290, FND-210's class). Both asked the deck, whose
@@ -305,7 +317,8 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   per point and per sweep, `fnec converge` per mesh, `--hosts`, the GUI and fnec_py,
   through the one producer they share (`frequency_independent_caveats`). A caveat,
   not a refusal: nec2c answers these decks and end-fed antennas are common. Feeds
-  only (`EX` 0, 4, 5); a `TL`/`NT` port there is not judged. A base-fed monopole
+  are `EX` 0, 4, 5; a `TL`/`NT` port there is judged when its network drives it
+  (FND-311, below). A base-fed monopole
   over `GN 1` is not caveated — its end joins the ground (as it would over `GN 0`
   or `2`, where the contact is refused, FND-240). "At a free
   end" is one predicate, `nec_solver::geometry::at_free_end`, on the refined Hallén

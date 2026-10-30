@@ -1840,6 +1840,27 @@ fn solve_a_free_end_feed_carries_its_caveat() {
     );
 }
 
+/// FND-311: the GUI carries the driven-port caveat too, from the same producer;
+/// the same feedline with its port in from the end carries none.
+#[test]
+fn solve_a_port_driven_at_a_free_end_carries_its_caveat() {
+    let deck = |port: u32| {
+        format!(
+            "GW 1 11 0 0 -5 0 0 5 0.001\nGW 3 5 100 0 -0.25 100 0 0.25 0.001\nGE 0\n\
+             EX 0 3 3 0 1 0\nTL 1 {port} 3 3 50 3.0 0 0 0 0\nFR 0 1 0 0 14.2 0\nEN\n"
+        )
+    };
+    let driven = |port| {
+        solve_deck_str(&deck(port), nec_gui::solve::SolverKind::Hallen)
+            .expect("solves")
+            .warnings
+            .iter()
+            .any(|w| w.contains("carries the drive from feedpoint"))
+    };
+    assert!(driven(1), "the free-end port is not caveated");
+    assert!(!driven(3), "the interior port is caveated");
+}
+
 /// A runaway sweep (mistyped tiny step over a wide range) is rejected before it
 /// can queue millions of solves and freeze the GUI.
 #[test]

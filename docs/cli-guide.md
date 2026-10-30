@@ -388,8 +388,15 @@ fed on segment 1 at 29.9 MHz reads 1839 − j1839 / 1244 − j5690 / 746 − j11
 11 / 33 / 99 segments (nec2c 3078 − j1554 / 2793 − j8345 / 1701 − j17519). Feed a
 segment in from the end, or model the feed's real geometry. A base-fed monopole on
 `GN 1` is not at a free end and gets no warning (on `GN 0`/`2` the contact is
-refused, FND-240); a `TL` or `NT`
-port at a free end is not judged.
+refused, FND-240).
+
+A **`TL` or `NT` port on a free-end segment that its network drives** — an end-fed
+wire through a feedline or a matching network, the feed on the network's other
+port (or on a port a chain of coupling networks reaches) — is the same gap, and
+warns the same way, naming the port and the feed (FND-311): nec2c's impedance at
+such a port equals a direct end feed's at every mesh. A passive port, whose
+network carries no feed, converges and is not caveated; nor is an `NT` with
+`Y12 = 0`, which couples nothing.
 
 The `--allow-noncollinear-hallen` flag is a no-op: it was the opt-in for the
 experimental non-collinear path before that path became the default, and is now
