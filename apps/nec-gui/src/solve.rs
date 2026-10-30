@@ -727,6 +727,16 @@ pub(crate) fn range_error_text(
         RangeError::EndBeforeStart { start, end } => {
             format!("{start_name} ({start}) must not be above {end_name} ({end})")
         }
+        // Below it the points are not distinct and the count is not the one
+        // typed (FND-316).
+        RangeError::StepBelowResolution {
+            step,
+            resolution,
+            max,
+        } => format!(
+            "{step_name} ({step}) is below the resolution of a frequency near {max} MHz \
+             ({resolution:e} MHz): the points would not be distinct. Widen the step"
+        ),
         // Guards a runaway sweep (a slipped decimal in the step) that would queue
         // millions of full matrix solves and freeze or OOM the GUI.
         RangeError::TooManyPoints { requested } => format!(

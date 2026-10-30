@@ -76,8 +76,19 @@ pub enum RangeError {
     EndNotFinite(f64),
     /// `end < start`. `end == start` is one point, not an error.
     EndBeforeStart { start: f64, end: f64 },
-    /// The range asks for more than [`MAX_FR_POINTS`] points (`requested` may be
-    /// infinite when `span/step` overflows).
+    /// The step is below the range's resolution, `8ε·max(|start|, |end|)` MHz: the
+    /// step at which the count rule's rounding term reaches half a step. Below it
+    /// a typed end is no longer counted to its nearest grid point — at about
+    /// `2ε·max` the points `start + i·step` collide — so `1000 … 1000.000000000001
+    /// by 1e-13` counted 20 points, with duplicate frequencies, for 11 (FND-316).
+    /// `max` is the frequency the resolution belongs to.
+    StepBelowResolution {
+        step: f64,
+        resolution: f64,
+        max: f64,
+    },
+    /// The range asks for more than [`MAX_FR_POINTS`] points. Always finite: past
+    /// the resolution refusal `span/step ≤ 1/(8ε)`.
     TooManyPoints { requested: f64 },
 }
 
@@ -91,10 +102,15 @@ pub enum RangeError {
 /// ```
 ///
 /// with ε = `f64::EPSILON`. `end` is included when it lies on the grid to within
-/// the arithmetic's own rounding, and — for a step at least a few ulp of the
-/// frequency — a point beyond it never is. (Below that, `step ≲ 8ε·max`, the grid
-/// is not representable at all: `start + i·step` collides and over-counts, as an
-/// `FR` card does too; FND-316.)
+/// the arithmetic's own rounding. The step must be at least the resolution
+/// `8ε·max` ([`RangeError::StepBelowResolution`]), the step at which the term is
+/// at most half a step: then the count is the typed end's nearest grid point —
+/// `n` or `n + 1` for `n = floor(exact span/step) + 1`, never a whole point past
+/// or short of it — and consecutive points are at least 6 ulp of the largest
+/// frequency apart, so distinct and increasing. Below it the term exceeds half a
+/// step and over-counts, and near `2ε·max` the points collide (FND-316). An `FR`
+/// card has its count written on it and is not refused: nec2c runs a zero or
+/// tiny step as repeated points.
 ///
 /// The tolerance term is that rounding, in steps. Five roundings feed
 /// `span/step` — `start`, `end` and `step` as stored, the subtraction and the
@@ -115,8 +131,8 @@ pub enum RangeError {
 /// `1 … 1.99999999995 by 0.1` would be 11 points ending at 2.0.
 ///
 /// Refused before anything is counted: an unusable `start`, a step that is not
-/// finite and > 0, a non-finite `end`, `end < start`, and a count over
-/// [`MAX_FR_POINTS`].
+/// finite and > 0, a non-finite `end`, `end < start`, a step below the
+/// resolution, and a count over [`MAX_FR_POINTS`].
 pub fn linear_range_len(start: f64, end: f64, step: f64) -> Result<usize, RangeError> {
     if !is_usable_frequency_mhz(start) {
         return Err(RangeError::StartNotUsable(start));
@@ -130,12 +146,25 @@ pub fn linear_range_len(start: f64, end: f64, step: f64) -> Result<usize, RangeE
     if end < start {
         return Err(RangeError::EndBeforeStart { start, end });
     }
+    // Before the count: below the resolution the count means nothing, so a
+    // sub-resolution step over a wide span is named for its step, not its size.
+    // `8ε·max` is exact (a power of two times `max`), so `step == resolution` is
+    // accepted with the tolerance term exactly half a step.
+    let max = start.abs().max(end.abs());
+    let resolution = 8.0 * f64::EPSILON * max;
+    if step < resolution {
+        return Err(RangeError::StepBelowResolution {
+            step,
+            resolution,
+            max,
+        });
+    }
     // Computed, never discovered by pushing: `f += step` is a no-op for a large
     // start and a tiny step, so a loop that counts as it goes may not terminate
     // (FND-109).
-    let tolerance = 4.0 * f64::EPSILON * start.abs().max(end.abs()) / step;
+    let tolerance = 4.0 * f64::EPSILON * max / step;
     let count = ((end - start) / step + tolerance).floor() + 1.0;
-    if !count.is_finite() || count > MAX_FR_POINTS as f64 {
+    if count > MAX_FR_POINTS as f64 {
         return Err(RangeError::TooManyPoints { requested: count });
     }
     Ok(count as usize)
@@ -323,6 +352,15 @@ mod tests {
         assert_eq!(frequencies_hz(&r), vec![14.2e6]);
     }
 
+    /// An `FR` card's count is written on it, so it cannot over-count, and NEC
+    /// runs a zero step as repeated points: nec2c 1.3.1 answers `FR 0 3 0 0 28 0`
+    /// with three 28 MHz blocks (measured 2026-10-29). Not refused — the
+    /// resolution rule is the range expander's alone (FND-316).
+    #[test]
+    fn an_fr_card_with_a_zero_step_is_repeated_points() {
+        assert_eq!(frequencies_hz(&deck_of("FR 0 3 0 0 28 0")), vec![28e6; 3]);
+    }
+
     /// `nec2c` runs `FR 2 3 0 0 14.2 0.1` as 14.2/14.3/14.4 — linear. The CLI
     /// treated an unrecognised `step_type` as the start frequency alone.
     #[test]
@@ -475,7 +513,9 @@ mod linear_range_tests {
     /// `floor(span/step) + 1` loses their last point; the rounding term restores
     /// it. `0.079 … 0.25458 by 1e-5` (a deficit of 1.29ε·max/step, the largest
     /// Fable's scan found) and `1.421 … 65.451 by 0.005` pin the term on cases
-    /// that are not exact-ulp coincidences.
+    /// that are not exact-ulp coincidences. Every step is at least 5e5 times its
+    /// range's resolution: negative controls for that refusal (FND-316), not
+    /// boundary cases.
     const HOSTILE: [(f64, f64, f64, usize); 8] = [
         (29.9, 30.0, 0.1, 2),
         (1.0, 2.0, 0.1, 11),
@@ -583,10 +623,86 @@ mod linear_range_tests {
                 end: 14.0
             })
         );
+        assert!(matches!(
+            linear_range_len(1000.0, 1000.000000000001, 1e-13),
+            Err(RangeError::StepBelowResolution { .. })
+        ));
     }
 
-    /// The cap is the `FR` card's: at it is fine, one past it is refused, and a
-    /// step so small that `span/step` overflows is refused rather than cast.
+    /// FND-316: the ledger's range, `1000 … 1000.000000000001 by 1e-13`, counted
+    /// 20 points with duplicates for 11. Its resolution is 8ε·1000.000000000001.
+    #[test]
+    fn a_step_below_the_resolution_is_refused() {
+        let end = 1000.000000000001;
+        assert_eq!(
+            linear_range_len(1000.0, end, 1e-13),
+            Err(RangeError::StepBelowResolution {
+                step: 1e-13,
+                resolution: 8.0 * f64::EPSILON * end,
+                max: end,
+            })
+        );
+        // A wide span too: named for its step, not for its size.
+        assert!(matches!(
+            linear_range_len(1.0, 1e300, f64::MIN_POSITIVE),
+            Err(RangeError::StepBelowResolution { .. })
+        ));
+    }
+
+    /// The threshold from both sides, on literals. The resolution belongs to the
+    /// range's largest frequency, its end: `1000 … 1000.0000000000177` has
+    /// resolution 8ε·end = 1.776356839400282e-12 MHz, exact, and at that step it
+    /// is 11 points ending on the end. One ulp below (`next_down`) it is refused.
+    /// Fails if the factor drifts to 4ε (the refused case is accepted) or to 16ε,
+    /// or `<` becomes `<=` (the accepted case is refused).
+    #[test]
+    fn the_resolution_is_eight_ulp_of_the_frequency() {
+        let end = 1000.0000000000177;
+        let res = 8.0 * f64::EPSILON * end;
+        assert_eq!(res, 1.776356839400282e-12);
+        let pts = linear_range_mhz(1000.0, end, res).expect("at the resolution");
+        assert_eq!(pts.len(), 11);
+        assert!(pts.windows(2).all(|w| w[1] > w[0]), "{pts:?}");
+        assert_eq!(pts[10], end);
+        assert!(matches!(
+            linear_range_len(1000.0, end, res.next_down()),
+            Err(RangeError::StepBelowResolution { .. })
+        ));
+    }
+
+    /// What the resolution buys, over a scan at and above it: points distinct and
+    /// increasing, and the last within half a step (plus rounding) of the end,
+    /// never a whole point past or short of it. Not `last ≤ end + ½step`: at the
+    /// resolution the tolerance term is exactly ½ step, and the span's own
+    /// rounding adds to it (Fable measured 0.555 step on ranges like these).
+    #[test]
+    fn above_the_resolution_the_count_is_the_nearest_grid_point() {
+        for start in [1.0, 30.0, 1000.0, 3e5] {
+            for mult in [1.0, 1.5, 4.0, 1e3] {
+                for n in [1.0, 7.0, 100.0] {
+                    for frac in [0.0, 0.25, 0.49, 0.51, 0.75, 0.999] {
+                        let step0 = 8.0 * f64::EPSILON * start * mult;
+                        let end = start + (n + frac) * step0;
+                        let max = end;
+                        let step = step0.max(8.0 * f64::EPSILON * max);
+                        let pts = linear_range_mhz(start, end, step).expect("above resolution");
+                        let last = *pts.last().unwrap();
+                        let what = format!("{start} … {end} by {step}");
+                        assert!(pts.windows(2).all(|w| w[1] > w[0]), "{what}");
+                        assert!(
+                            last - end <= 0.5 * step + 4.0 * f64::EPSILON * max,
+                            "{what}: last {last}"
+                        );
+                        assert!(end - last < step, "{what}: last {last}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// The cap is the `FR` card's: at it is fine, one past it is refused, and so
+    /// is a span of a million steps. The count is always finite: a step below the
+    /// resolution, which `span/step` could overflow on, is refused first.
     #[test]
     fn the_count_is_capped_at_max_fr_points() {
         let at = (MAX_FR_POINTS - 1) as f64;
@@ -599,9 +715,11 @@ mod linear_range_tests {
             linear_range_len(1.0, 30_000.0, 1e-7),
             Err(RangeError::TooManyPoints { .. })
         ));
-        assert!(matches!(
-            linear_range_len(1.0, 1e300, f64::MIN_POSITIVE),
-            Err(RangeError::TooManyPoints { .. })
-        ));
+        assert_eq!(
+            linear_range_len(1.0, 1e6, 1.0),
+            Err(RangeError::TooManyPoints {
+                requested: 1_000_000.0
+            })
+        );
     }
 }

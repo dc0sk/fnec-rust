@@ -795,7 +795,9 @@ A range expands to `start_mhz + i·step_mhz` — as an `FR` card does — for
 (ε = 2.2e-16): the end is included when it is on the grid to within rounding,
 so `29.9 … 30.0 by 0.1` is two points and `1000 … 1000.001 by 1e-7` is 10 001,
 while an end typed short of the grid is not reached (`1 … 1.99999 by 0.1` is 10).
-`start_mhz = end_mhz` is one point. More than 100 000 points is refused. The GUI's
+`start_mhz = end_mhz` is one point. More than 100 000 points is refused, and so is
+a step below the range's resolution, 8ε·max(|start|, |end|) — about 1.8e-12 MHz at
+1000 MHz — where the points would not be distinct (FND-316). The GUI's
 sweep tab expands its range by the same rule. The checks that read frequencies —
 usable values, and a `TL`/`NT` that cannot be built at one of them — read this
 list, not the deck's `FR`; such a refusal ends `(at 30 MHz, from --sweep-config)`.
