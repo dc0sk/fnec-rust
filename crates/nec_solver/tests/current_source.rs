@@ -178,56 +178,88 @@ fn current_source_two_wire_array_matches_voltage_source() {
     );
 }
 
-/// FND-270: the library's own path-basis current-source solve marks the source
-/// segment as the gap its bend rows must not extrapolate across. The dipole of two
-/// halves, fed beside their node: straight it is one section; bent by 2e-4 rad
-/// the node row read the port 1 % low, against 0.11 % with the gap marked.
-#[test]
-fn a_current_source_beside_a_vanishing_bend_is_the_straight_join() {
-    let z_in = |t: f64| {
-        let (x, zt) = (2.64 * t.sin(), 2.64 * t.cos());
-        let text = format!(
-            "CE\nGW 1 10 0 0 -2.64 0 0 0 .001\nGW 2 10 0 0 0 {x:.12} 0 {zt:.12} .001\nGE 0\n\
-             EX 4 1 10 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n"
-        );
-        let d = nec_parser::parse(&text).expect("parses").deck;
-        let segs = nec_solver::build_geometry(&d).expect("geometry");
-        let z = assemble_z_matrix_with_ground(&segs, 28.4e6, &GroundModel::FreeSpace);
-        solve_current_source_hallen(&d, &segs, &z, 28.4e6)
-            .expect("solve")
-            .port_voltage
-    };
-    let (straight, bent) = (z_in(0.0), z_in(2e-4));
-    let step = (bent.re - straight.re).abs() / straight.re;
-    assert!(step < 0.002, "{bent} vs straight {straight}: {step:.4}");
+/// The dipole of two halves at 28.4 MHz, the second half bent by `t` rad at the
+/// node, fed `EX 4` on segment `feed` of the first.
+fn two_halves(t: f64, feed: u32, extra: &str) -> NecDeck {
+    let (x, zt) = (2.64 * t.sin(), 2.64 * t.cos());
+    let text = format!(
+        "CE\nGW 1 10 0 0 -2.64 0 0 0 .001\nGW 2 10 0 0 0 {x:.12} 0 {zt:.12} .001\nGE 0\n\
+         {extra}EX 4 1 {feed} 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n"
+    );
+    nec_parser::parse(&text).expect("parses").deck
 }
 
-/// FND-270: the library's path-basis current-source solve marks a load step too,
-/// as the routed solve does: a j1000 Ω load on the segment beyond a 2e-4 rad bend,
-/// the source far from it. Without the load marked the library port read 10 %
-/// from the routed solve's.
-#[test]
-fn a_current_source_with_a_load_beside_the_bend_matches_the_routed_solve() {
-    let text = format!(
-        "CE\nGW 1 10 0 0 -2.64 0 0 0 .001\nGW 2 10 0 0 0 {:.12} 0 {:.12} .001\nGE 0\n\
-         LD 4 2 1 1 0 1000\nEX 4 1 5 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n",
-        2.64 * 2e-4f64.sin(),
-        2.64 * 2e-4f64.cos()
-    );
-    let d = nec_parser::parse(&text).expect("parses").deck;
-    let segs = nec_solver::build_geometry(&d).expect("geometry");
-    let loads = nec_solver::build_loads(&d, &segs, 28.4e6).0;
-    let fresh = || assemble_z_matrix_with_ground(&segs, 28.4e6, &GroundModel::FreeSpace);
-    let routed = nec_solver::solve_hallen_routed(&d, &segs, &mut fresh(), 28.4e6, &loads)
+/// The port voltage of `deck` through the routed solve, with `loads` the run's
+/// load diagonal — which the deck's cards need not carry.
+fn routed_port_voltage(deck: &NecDeck, loads: &[Complex64]) -> Complex64 {
+    let segs = build_geometry(deck).expect("geometry");
+    let mut z = assemble_z_matrix_with_ground(&segs, 28.4e6, &GroundModel::FreeSpace);
+    nec_solver::solve_hallen_routed(deck, &segs, &mut z, 28.4e6, loads)
         .expect("routed")
         .port_voltage
-        .expect("port voltage");
-    let paths = nec_solver::build_conductor_paths(&segs);
-    let mut z = fresh();
-    nec_solver::stamp_hallen_load_columns(&mut z, &segs, 28.4e6, &loads, paths.as_deref());
-    let lib = solve_current_source_hallen(&d, &segs, &z, 28.4e6)
-        .expect("solve")
-        .port_voltage;
-    let rel = (lib - routed).norm() / routed.norm();
-    assert!(rel < 1e-3, "library {lib} vs routed {routed}: {rel:.2e}");
+        .expect("port voltage")
+}
+
+/// FND-310: the library entry solves straight and collinear wires and refuses a
+/// bent or reversed path by name. The path solve is the routed solve's alone; its
+/// second copy here rebuilt the deck's `LD` cards for its gaps and marked its own
+/// source only, so a run's other loads and ports were not gaps there.
+fn library_refuses_the_bent_path(deck: &NecDeck) {
+    let segs = build_geometry(deck).expect("geometry");
+    let z = assemble_z_matrix_with_ground(&segs, 28.4e6, &GroundModel::FreeSpace);
+    match solve_current_source_hallen(deck, &segs, &z, 28.4e6) {
+        Err(e @ nec_solver::CurrentSourceError::NeedsRoutedSolve) => {
+            assert!(e.to_string().contains("solve_hallen_routed"), "{e}");
+        }
+        other => panic!("a bent path must be refused by name, got {other:?}"),
+    }
+}
+
+/// FND-270: the routed current-source solve marks the source segment as the gap
+/// its node rows must not extrapolate across. The dipole of two halves, fed
+/// beside their node: straight it is one section; bent by 2e-4 rad the node row
+/// read the port 1 % low, against 0.11 % with the gap marked. (Through the
+/// library entry until FND-310, which agreed with the routed solve exactly on
+/// main a6b7ffb, bent and straight.)
+#[test]
+fn a_current_source_beside_a_vanishing_bend_is_the_straight_join() {
+    let (straight, bent) = (
+        routed_port_voltage(&two_halves(0.0, 10, ""), &[]),
+        routed_port_voltage(&two_halves(2e-4, 10, ""), &[]),
+    );
+    let step = (bent.re - straight.re).abs() / straight.re;
+    assert!(step < 0.002, "{bent} vs straight {straight}: {step:.4}");
+    library_refuses_the_bent_path(&two_halves(2e-4, 10, ""));
+}
+
+/// FND-270 and FND-310: a load step is a gap too, and the run's load, not the
+/// deck's card. A j1000 Ω load on the segment beyond a 2e-4 rad bend, the source
+/// far from it, given **only as the load diagonal** — the deck has no `LD` card,
+/// as a `--loads-config` load does not. The straight deck is one section with no
+/// node row, so its answer does not depend on the gaps at all; the bent one
+/// matches it only if the load is marked: 0.72 % with it, 10.8 % with the load
+/// left out of the gaps. Two segments from the node the load steps 0.02 % either
+/// way (the control).
+#[test]
+fn a_load_only_the_run_carries_beside_the_bend_is_the_straight_join() {
+    let load_at = |at: u32| {
+        // The diagonal an `LD 4` card would stamp, solved on a deck without it.
+        let carded = two_halves(0.0, 5, &format!("LD 4 2 {at} {at} 0 1000\n"));
+        let segs = build_geometry(&carded).expect("geometry");
+        nec_solver::build_loads(&carded, &segs, 28.4e6).0
+    };
+    let rel = |a: Complex64, b: Complex64| (a - b).norm() / b.norm();
+    let near = load_at(1);
+    let (straight, bent) = (
+        routed_port_voltage(&two_halves(0.0, 5, ""), &near),
+        routed_port_voltage(&two_halves(2e-4, 5, ""), &near),
+    );
+    assert!(rel(bent, straight) < 1e-2, "{bent} vs straight {straight}");
+    let far = load_at(3);
+    let (s3, b3) = (
+        routed_port_voltage(&two_halves(0.0, 5, ""), &far),
+        routed_port_voltage(&two_halves(2e-4, 5, ""), &far),
+    );
+    assert!(rel(b3, s3) < 5e-4, "{b3} vs straight {s3}");
+    library_refuses_the_bent_path(&two_halves(2e-4, 5, ""));
 }

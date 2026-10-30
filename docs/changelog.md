@@ -17,6 +17,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **`--output-format json` carries `EX` I4's input-impedance table** as each
+  record's `input_impedance` object (FND-314): the feedpoint it follows
+  (`feedpoint_index` into `feedpoints`, `source_tag`, `source_seg`,
+  `source_abs_seg`), `normalization_ohms`, `normalized_to` (`"F3"` or `"MAX"`)
+  and the normalized `zn_re`, `zn_im`, `zn_abs`. Present exactly when the text
+  report prints the table, from the same decision, on both the local and the
+  `--hosts` route; a sweep that lost a point carries it on no record and says
+  so on stderr. The warning that JSON had no form for it is gone. An added
+  field, so v1 consumers are unaffected.
+
 - **`fnec converge`, the convergence-study helper** (GAP-012, BL-IMPR-017).
   It solves a deck as written and meshed 3× and 9× finer (`--factors`, odd and
   geometric: `1,3,9` by default, `1,3,9,27` allowed) and reports, for every
@@ -82,7 +92,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   point. On `EX 0 1 6 11 1 0 50`, `FR 0 2 0 0 29.9 1` (a 5 m dipole): nec2c 78.614 +
   j40.951 Ω → 1.5723 + j0.81903, fnec within 0.6 % of |Z|. The report's
   `FORMAT_VERSION` stays 1: the section is additive. `--output-format json`
-  warns that it has no JSON form yet, `--output-format nec2d` refuses the deck,
+  carries it per record (FND-314, above), `--output-format nec2d` refuses the deck,
   `fnec converge` notes the request as dropped, and the GUI and `fnec_py` do not
   carry it. The local and distributed runs now print `SWEEP_POINTS` (unchanged,
   to the byte) and the new section through one renderer,
@@ -96,6 +106,34 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   be shown to fire through each of them; no corpus deck reaches the default.
 
 ### Changed
+
+- **Two `EX` cards on one segment drive it as NEC-2 does** (FND-305). fnec summed
+  every card; NEC-2 applies the last type-0 card naming a segment (nec2c assigns its
+  field) and adds every type-5 card's. On a 21-segment dipole fed `EX 0 1 11 0 1 0`
+  then `EX 0 1 11 0 0.5 0` at 14.2 MHz fnec solved a 1.5 V drive; it now drives
+  0.5 V and its CURRENTS block is the 0.5 V deck's to every digit, as nec2c's is
+  (|I| 5.547e-3 A against nec2c's 5.4722e-3, 1.4 %). The impedance was the same either way
+  (78.955 + j43.484 Ω), which is why the finding hid. FEEDPOINTS, the JSON
+  `feedpoints` array and the bindings' rows have one row per driven segment, and
+  each overridden card earns a warning naming itself and the drive applied;
+  `N_SOURCES` still counts cards. Gain and NEC-2D's POWER BUDGET follow the applied
+  drive (1.18 mW, 2.16 dBi); nec2c's own INPUT POWER on such a deck sums one row
+  per card (3.55 mW, −2.61 dBi over the identical E-field), so it is not the
+  reference there. One owner, `nec_solver::driven_segments`, decides the drive for
+  the EFIE vector, every Hallén right-hand side, the section graph, the network
+  solve, the MPIE, the feedpoint rows and the input power. EX I4's
+  `INPUT_IMPEDANCE` finds its source by segment.
+- `solve_current_source_hallen` refuses a bent or reversed conductor path with
+  `CurrentSourceError::NeedsRoutedSolve`, as it has refused a junction or loop
+  since FND-211, and solves straight and collinear wires only (FND-310). Its
+  path arm was a second copy of the routed solve's that differed in two ways:
+  it built its gap list from the deck's `LD` cards, so a caller that stamped
+  `--loads-config` loads got gaps without them, and it marked only its own
+  source as a gap, not the run's other feeds and ports. No frontend reached it —
+  the routed solve answers every such deck — and the two agreed exactly on
+  every deck its tests carry, measured before the arm went. Its two FND-270
+  tests now run through `solve_hallen_routed`, one with a load only the
+  diagonal carries.
 
 - **`EX` I4 units digits 2–9, and units 1 with a negative F3, are refused** on a
   voltage source (types 0 and 5; FND-309). NEC-2 defines 0 and 1. nec2c reads 2
@@ -116,6 +154,24 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A `TL` or `NT` port on a segment more than one `EX` card drives is refused**
+  (FND-305), on every frontend. nec2c prices that network from the first card and
+  drives the structure with the last: on two dipoles with `EX 0 1 11` 1 V, then
+  0.5 V, and `TL 1 11 2 11 50` its current (9.33e-3 + j9.41e-3 A) matches neither
+  card's deck and it reports 2.3 mW of NETWORK LOSS on a lossless line, so there
+  is no answer to gate against.
+- **A single feed spelt with two `EX` cards takes the Sommerfeld correction and
+  the `--hosts` route** (FND-305): both counted cards, so `--ground-solver
+  sommerfeld` declined such a deck as multi-feed and `--hosts` refused it, while
+  the report showed one feedpoint. The worker's feed row prices the drive the
+  solve applies (FND-297 d), which is now the last card's.
+- **A sweep range whose step is below its resolution is refused** in
+  `--sweep-config` and the GUI's sweep tab (FND-316). Below 8ε·max(|start|, |end|)
+  — 1.8e-12 MHz at 1000 MHz — the count rule's rounding term exceeds half a
+  step, and `1000 … 1000.000000000001 by 1e-13` counted 20 points, with
+  duplicate frequencies, for 11. The new `RangeError::StepBelowResolution`
+  names the step and the resolution. `FR` cards are unchanged: their count is
+  written on the card, and nec2c runs a zero or tiny step as repeated points.
 - **A `TL`/`NT` port on a free-end segment that its network drives is caveated**
   as a free-end feed (FND-311): an end-fed wire through a feedline or a matching
   network solved with exit 0 and no word, while the same wire fed directly on its
@@ -229,8 +285,8 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   21-segment dipole with `EX 0 1 11 0 1 0` and `EX 0 1 11 0 0.5 0` it returned
   52.64 + j28.99 Ω where the CLI says 78.96 + j43.48 Ω. The worker, the GUI and the
   bindings now all price the row through `nec_solver::feedpoint_drive_voltage`.
-  How two cards on one segment should combine is a separate finding: nec2c applies
-  the last card (FND-305).
+  How two cards on one segment combine is FND-305, fixed in this release: nec2c
+  applies the last card, and so does fnec now.
 - **One definition of the speed of light, μ0, ε0 and η0** (FND-297 b). Fourteen
   modules in four crates defined their own, and eight more sites wrote the value
   inline. They now read `nec_model::constants` (re-exported as
@@ -386,6 +442,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   stderr lacked passed on a refusal — two `TL` tests ran fnec's retired layout —
   and now show the deck solved. A GPU test skips only on a genuinely absent
   adapter: a failed device request or readback on a found one is a failure.
+- **Findings-ledger rows cite commits that exist on `main`** (FND-317). 26
+  rows cited branch commits as "Fixed in <hash>"; the PRs were squash-merged, so
+  the hashes were on no branch and absent from a fresh clone. They now name the
+  PR. `scripts/check-findings-ledger.py` fails on a cited commit that is not an
+  ancestor of HEAD unless `(#N)` follows it, and refuses a shallow clone rather
+  than pass it; its self-test, `scripts/test-check-findings-ledger.py`, runs in
+  `check-all.sh` and CI.
 
 ## [0.25.0] — 2026-10-22 — Where wires meet
 

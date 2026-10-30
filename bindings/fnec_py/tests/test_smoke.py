@@ -698,6 +698,26 @@ def test_a_one_source_deck_has_a_one_element_feedpoints_list():
     assert rec["feedpoints"][0]["z_re"] == rec["z_re"], rec
 
 
+def test_two_ex_cards_on_one_segment_are_one_feedpoint_with_a_warning():
+    """FND-305: NEC-2 drives a segment with the last type-0 card naming it.
+
+    Two cards (1 V, then 0.5 V) are one feedpoint, priced at the drive applied, so
+    the impedance is the 0.5 V deck's; the overridden card earns a UserWarning.
+    """
+    deck = (
+        "CE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\n"
+        "EX 0 1 11 0 1 0\nEX 0 1 11 0 0.5 0\nFR 0 1 0 0 14.2 0\nEN\n"
+    )
+    half = deck.replace("EX 0 1 11 0 1 0\n", "")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        rec = fnec_py.solve_deck_str(deck)
+    assert len(rec["feedpoints"]) == 1, rec
+    assert abs(rec["z_re"] - fnec_py.solve_deck_str(half)["z_re"]) < 1e-9, rec
+    messages = [str(w.message) for w in caught]
+    assert any("NEC-2 applies only the last" in m for m in messages), messages
+
+
 def test_the_residual_caveat_fires_when_the_threshold_is_crossed(monkeypatch):
     """FND-302 positive control through the bindings' real solve.
 

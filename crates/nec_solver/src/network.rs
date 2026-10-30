@@ -236,6 +236,9 @@ pub fn solve_with_networks<E>(
 ) -> Result<NetworkSolution, NetworkSolveError<E>> {
     let ports = networks.ports();
     let y = networks.admittance(&ports);
+    // First match: `driven` has one entry per segment, which is the caller's to
+    // guarantee — every caller builds it from `excitation::driven_segments` — so
+    // there is no second card a port could be priced from (FND-305).
     let driven_v = |seg: usize| driven.iter().find(|(s, _)| *s == seg).map(|(_, v)| *v);
     let undriven: Vec<usize> = (0..ports.len())
         .filter(|&i| driven_v(ports[i]).is_none())
