@@ -138,7 +138,7 @@ run "cargo deny" cargo deny check bans licenses sources
 
 for c in check-changelog-headings check-findings-ledger check-path-inventory \
          check-release-tags check-binding-version check-hooks-take-lock \
-         check-physical-constants; do
+         check-physical-constants check-scratch-paths; do
     run "$c" python3 "scripts/$c.py"
 done
 # Local too: the hooks and this script lint with the `rustc` on PATH, so a
@@ -173,6 +173,7 @@ run "check-asset-platform self-test" python3 scripts/test-check-asset-platform.p
 run "unreleased-empty self-test" python3 scripts/test-check-changelog-unreleased-empty.py
 run "physical-constants self-test" python3 scripts/test-check-physical-constants.py
 run "findings-ledger self-test" python3 scripts/test-check-findings-ledger.py
+run "scratch-paths self-test" python3 scripts/test-check-scratch-paths.py
 
 # Against the merge base, so it sees the doc-regression half — a doc comment can
 # only come adrift from an item *relative to* where that item was documented.
