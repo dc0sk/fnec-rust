@@ -154,6 +154,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A GPU device lost during a readback declines to the CPU instead of aborting
+  `fnec`** (FND-321). wgpu 30 reports a lost device by panicking inside
+  `Device::poll`, not by an error, so the "the device was lost — falling back to
+  CPU" path never ran for a loss: an `--exec gpu` solve whose device was lost
+  ended the process. The one wait every readback shares now catches that panic
+  and reports a lost device, with wgpu's own words, and the solve falls back as
+  it does for a timeout. wgpu's panic line still appears on stderr ahead of the
+  warning.
+
 - **A `TL` or `NT` port on a segment more than one `EX` card drives is refused**
   (FND-305), on every frontend. nec2c prices that network from the first card and
   drives the structure with the last: on two dipoles with `EX 0 1 11` 1 V, then
