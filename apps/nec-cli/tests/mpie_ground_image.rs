@@ -15,6 +15,8 @@
 //! meshes, and the finer is nearer.
 use std::process::Command;
 
+mod common;
+
 /// nec2c 1.3.1 at 9× each deck's mesh (`scripts/nec2c-fine-mesh.py`), captured
 /// 2026-10-13. The 1× / 3× / 9× series: L 0.05 m 39.963+j22.692, 40.063+j23.051,
 /// 40.118+j23.214; L 0.3 m 38.944+j18.015, 39.047+j18.310, 39.098+j18.482;
@@ -75,12 +77,7 @@ const FOUR: [(f64, f64); 4] = [(5.3, 0.0), (0.0, 5.3), (-5.3, 0.0), (0.0, -5.3)]
 
 /// `fnec --solver mpie` on `deck`: (feedpoint Z, stderr).
 fn mpie(deck: &str) -> ((f64, f64), String) {
-    let dir = std::env::temp_dir().join(format!(
-        "fnec-mpie-image-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let dir = common::TempDir::new("mpie-image");
     let path = dir.join("deck.nec");
     std::fs::write(&path, deck).expect("write deck");
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -88,7 +85,6 @@ fn mpie(deck: &str) -> ((f64, f64), String) {
         .arg(&path)
         .output()
         .expect("run fnec");
-    let _ = std::fs::remove_dir_all(&dir);
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     assert!(out.status.success(), "{stderr}");
     let stdout = String::from_utf8_lossy(&out.stdout);

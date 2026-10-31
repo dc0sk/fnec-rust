@@ -14,13 +14,10 @@
 
 use std::process::Command;
 
+mod common;
+
 fn run(args: &[&str], deck_text: &str) -> (bool, String, String) {
-    let dir = std::env::temp_dir().join(format!(
-        "fnec-end-segment-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let dir = common::TempDir::new("end-segment");
     let path = dir.join("deck.nec");
     std::fs::write(&path, deck_text).expect("write deck");
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -28,7 +25,6 @@ fn run(args: &[&str], deck_text: &str) -> (bool, String, String) {
         .arg(&path)
         .output()
         .expect("run fnec");
-    let _ = std::fs::remove_dir_all(&dir);
     (
         out.status.success(),
         String::from_utf8_lossy(&out.stdout).into_owned(),

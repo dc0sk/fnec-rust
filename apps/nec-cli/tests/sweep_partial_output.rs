@@ -21,6 +21,8 @@
 
 use std::process::Command;
 
+mod common;
+
 /// 1e-200 MHz solves to no current at the feedpoint, so the point fails while
 /// its neighbours succeed. A whole-deck refusal would not exercise this: it has
 /// to be a per-POINT failure inside an otherwise good sweep.
@@ -35,12 +37,7 @@ fn run(cfg: &str) -> (Option<i32>, String, String) {
     // process, so a directory keyed only on the pid is shared, and each test
     // deletes the other's config mid-run. Same isolation bug as the stub worker
     // in worker_task_fault.rs, one layer up.
-    let dir = std::env::temp_dir().join(format!(
-        "fnec-partial-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let dir = common::TempDir::new("partial");
     let path = dir.join("sweep.toml");
     std::fs::write(&path, cfg).expect("write config");
 
@@ -50,7 +47,6 @@ fn run(cfg: &str) -> (Option<i32>, String, String) {
         .arg(root.join("corpus").join("dipole-freesp-51seg.nec"))
         .output()
         .expect("run fnec");
-    let _ = std::fs::remove_dir_all(&dir);
     (
         out.status.code(),
         String::from_utf8_lossy(&out.stdout).into_owned(),

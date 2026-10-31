@@ -743,8 +743,7 @@ fn a_worker_task_is_not_refused_for_the_fr_its_frequency_replaces() {
     );
 
     // The local run with the same frequency list.
-    let dir = std::env::temp_dir().join(format!("fnec-fnd290-worker-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let dir = common::TempDir::new("fnd290-worker");
     let deck_path = dir.join("negfr.nec");
     let sweep_path = dir.join("sw.toml");
     std::fs::write(&deck_path, NEG_FR).expect("write deck");
@@ -755,7 +754,6 @@ fn a_worker_task_is_not_refused_for_the_fr_its_frequency_replaces() {
         .arg(&deck_path)
         .output()
         .expect("run fnec");
-    std::fs::remove_dir_all(&dir).ok();
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         out.status.success(),

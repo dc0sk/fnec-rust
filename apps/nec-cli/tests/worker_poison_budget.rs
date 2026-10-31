@@ -20,16 +20,13 @@
 use nec_worker::WorkerPool;
 use std::io::Write;
 
+mod common;
+
 /// A worker that answers normally, except that a task whose id contains
 /// `poison` makes it exit without a word — a deterministic crash holding that
 /// task, which is exactly the shape that drained the pool.
-fn poison_stub() -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "fnec-poison-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+fn poison_stub() -> (common::TempDir, std::path::PathBuf) {
+    let dir = common::TempDir::new("poison");
     let staged = dir.join("stub.staging");
     let path = dir.join("poison-worker.sh");
     {
@@ -51,7 +48,7 @@ fn poison_stub() -> std::path::PathBuf {
             .expect("chmod stub");
     }
     std::fs::rename(&staged, &path).expect("stage stub into place");
-    path
+    (dir, path)
 }
 
 /// Spawn a pool, retrying while the stub reads as "Text file busy".
@@ -97,14 +94,14 @@ fn task(id: &str) -> nec_worker::TaskMessage {
 #[cfg(unix)]
 #[test]
 fn a_poison_task_is_blamed_before_it_empties_the_pool() {
-    let stub = poison_stub();
+    let (stub_dir, stub) = poison_stub();
     let mut pool = spawn_pool_retrying(4, stub.to_str().expect("path"));
     assert_eq!(pool.len(), 4, "setup");
 
     let out = pool.dispatch(&task("poison-1"));
     let remaining = pool.len();
     pool.shutdown_all();
-    let _ = std::fs::remove_dir_all(stub.parent().expect("dir"));
+    drop(stub_dir);
 
     let err = out.expect_err("a task that kills every worker it touches must fail");
     assert!(
@@ -130,7 +127,7 @@ fn a_poison_task_is_blamed_before_it_empties_the_pool() {
 #[cfg(unix)]
 #[test]
 fn a_healthy_task_still_gets_past_workers_that_were_never_reachable() {
-    let stub = poison_stub();
+    let (stub_dir, stub) = poison_stub();
     let mut pool = spawn_pool_retrying(3, stub.to_str().expect("path"));
     // Kill two workers outright, so they are gone before the task arrives: the
     // write fails, which is `Unreachable`, not `died holding`.
@@ -138,7 +135,7 @@ fn a_healthy_task_still_gets_past_workers_that_were_never_reachable() {
 
     let out = pool.dispatch(&task("healthy-1"));
     pool.shutdown_all();
-    let _ = std::fs::remove_dir_all(stub.parent().expect("dir"));
+    drop(stub_dir);
 
     assert!(
         out.is_ok(),
@@ -165,7 +162,7 @@ fn a_healthy_task_still_gets_past_workers_that_were_never_reachable() {
 #[cfg(unix)]
 #[test]
 fn a_task_whose_write_stalls_is_not_blamed_for_it() {
-    let stub = poison_stub();
+    let (stub_dir, stub) = poison_stub();
     let wedging = stub.with_file_name("wedging-worker.sh");
     // The third answers with awk, which reads a 2 MiB line at once where the
     // shell's `read` takes it a byte at a time; `-W interactive` because mawk
@@ -208,7 +205,7 @@ fn a_task_whose_write_stalls_is_not_blamed_for_it() {
     let out = pool.dispatch(&big);
     let remaining = pool.len();
     pool.shutdown_all();
-    let _ = std::fs::remove_dir_all(stub.parent().expect("dir"));
+    drop(stub_dir);
 
     assert!(
         out.is_ok(),
