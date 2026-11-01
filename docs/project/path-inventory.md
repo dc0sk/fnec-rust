@@ -123,7 +123,7 @@ An f32 solve that has not converged must not be reported as a result.
 | # | Path | Covered | Evidence |
 |:--|:-----|:--------|:---------|
 | 1 | `solve_hallen_gpu_resident` | yes | `gpu_resident_never_reports_a_diverged_solve` |
-| 2 | `fill_zmatrix_wgpu` → CPU solve | n/a | f32 fill, f64 solve; bounded by the 2 Ω GPU-path test instead |
+| 2 | resident currents vs the f64 problem | yes | `device_residual_f64.rs` (FND-307): the CLI's residual is against the CPU's f64 fill and declines above `DEVICE_REL_RESIDUAL_MAX`; the worker the same (`worker_device_residual.rs`). `fill_zmatrix_wgpu` no longer feeds a solve |
 | 3 | RP far-field kernels | n/a | no linear solve involved |
 
 Single seam: every GPU-resident solve returns through one function, and the gate is
