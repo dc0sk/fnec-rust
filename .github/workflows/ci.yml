@@ -217,6 +217,13 @@ jobs:
         run: |
           python3 scripts/test-check-physical-constants.py
           python3 scripts/check-physical-constants.py
+      # A CLI test builds no scratch path by hand: `common::TempDeck` owns the
+      # name's uniqueness, and a clock-keyed name collided between parallel tests
+      # (FND-319). The 42 older files are allowlisted; the list only shrinks (FND-320).
+      - name: CLI tests build no scratch path by hand
+        run: |
+          python3 scripts/test-check-scratch-paths.py
+          python3 scripts/check-scratch-paths.py
       # One toolchain pin: every `dtolnay/rust-toolchain@<version>` above names
       # rust-toolchain.toml's channel (FND-149).
       - name: Toolchain pin matches rust-toolchain.toml
