@@ -48,7 +48,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/gain_load_loss.rs` | 3 | FND-200: a lossy load costs gain in free space and over PEC — vs nec2c at two meshes with unloaded controls, a `--loads-config` twin equal to its `LD` card, and the RP A-digit average power gain equal to the efficiency. | FND-200 |
 | `apps/nec-cli/tests/geometry_diagnostics.rs` | 20 | Fail-fast on crossing wires / tiny source; valid junctions accepted; `--hosts` refuses a multi-feed deck before dialling, and takes a one-feed deck to the pool (FND-304) | FR-009, PH2-CHK-006, FND-304 |
 | `apps/nec-cli/tests/gpu_benchmark_gate.rs` | 1 | Gate G5: the GPU RP far-field kernel ≤1.5× the CPU far-field on the 2701-point grid, in-process with the device initialised once (best-of-N); skips only without a hardware adapter (FND-165) | PH5-CHK-005, PH7-CHK-002 |
-| `apps/nec-cli/tests/gpu_resident_solve_cli.rs` | 5 | `--exec gpu` feedpoint Z within 2 Ω of CPU on corpus; a 2049-segment deck, past the old dispatch and `MAX_S` ceilings, solves on the device (FND-188/189); a point the device does not solve (loaded, bent) is filled in f64 and answers as `--exec cpu` to the byte, and `fill_exec` names where the matrix was filled (device half dormant without an adapter) (FND-293) | PH7-CHK-003 |
+| `apps/nec-cli/tests/gpu_resident_solve_cli.rs` | 6 | `--exec gpu` feedpoint Z within 2 Ω of CPU on corpus; a 2049-segment deck, past the old dispatch and `MAX_S` ceilings, solves on the device (FND-188/189); a point the device does not solve (loaded, bent) is filled in f64 and answers as `--exec cpu` to the byte, and `fill_exec` names where the matrix was filled (device half dormant without an adapter) (FND-293); a lost device's panic line plus its fallback warning read as a transient miss (FND-321) | PH7-CHK-003 |
 | `apps/nec-cli/tests/gpu_rp_exec.rs` | 4 | Gate G4: `--exec gpu` RP far-field matches CPU | PH5-CHK-004 |
 | `apps/nec-cli/tests/ground_diagnostics.rs` | 12 | `GN` handling: GE 1 + GN 1 over PEC, GN0/GN2 active; the finite-ground contact refusal names two models, each run at two meshes against nec2c's converged value (FND-240) | PRT-001, PH2-CHK-001/002 |
 | `apps/nec-cli/tests/ground_flags_nec2c.rs` | 7 | FND-241/242/243 — `GE`/`GN` as nec2c reads them: the ground from the last `GN` alone (a raised wire's answer independent of `GE`), undefined values and `GE 1` without `GN` refused by name, a wire on the ground without `GE 1` refused with its remedy converging to nec2c at 21 and 63 segments, and nec2c's 10⁻³-of-a-segment contact band; FND-283 — a GN radial screen over a finite ground refused, the GN fields nec2c ignores (I2–F6 over GN 1/−1, I3/I4, a second medium) ignored with a warning and the answer unchanged | FND-241, FND-242, FND-243, FND-283 |
@@ -178,7 +178,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=979 --> **979** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=980 --> **980** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -194,16 +194,16 @@ functions across the `tests/` binaries listed above.
 | `nec-gui` | 103 | the FND-302 caveat firing through the single solve and the sweep stream, app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 58 | main, match_cmd (impedance spellings, text and JSON blocks), exec_profile, kernel (the PAR-011 kernel path, CRLF and warnings, its failure), sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
 | `nec_parser` | 51 | lib (incl. the FND-236 card treatments, FND-237 comma fields, the PAR-011 program-card records, and the positional reading of FR/RP/GN/TL/NT/PT with its refusals, FND-283/284/285/287/298/300), template |
-| `nec_accel` | 40 | kernel_reference 20, lib 4, `wgpu_device` RUST_LOG filter 3 (FND-190), GPU wait timeout 5 (FND-196), failure backoff 3 (FND-234), `gpu_test` re-run policy 4 (FND-215) |
+| `nec_accel` | 42 | kernel_reference 20, lib 4, `wgpu_device` RUST_LOG filter 3 (FND-190), GPU wait 7 (timeout FND-196, lost-device panic FND-321), failure backoff 3 (FND-234), `gpu_test` re-run policy 4 (FND-215) |
 | `nec_report` | 33 | lib 25, sweep 5 (`SWEEP_POINTS` and `INPUT_IMPEDANCE`, FND-309), fortran 3 (NEC-2 FORMAT lines lifted from the kernel fixtures, records, edge cases) |
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 8 | lib 7, constants 1 (μ0 ε0 c² = 1, FND-297 b) |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=744 --> **744** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=746 --> **746** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1730 --> **1730** = 744 unit + 979 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1733 --> **1733** = 746 unit + 980 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
