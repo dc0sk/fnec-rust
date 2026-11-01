@@ -1,7 +1,7 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+
+mod common;
 
 fn run_fnec(deck_path: &Path, workspace_root: &Path) -> (String, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -59,15 +59,9 @@ fn first_feedpoint_impedance(stdout: &str) -> (f64, f64) {
 /// check to one solver revision: FND-156 moved the unloaded dipole by +29 Ω of
 /// reactance and all three failed, though no load stamp had changed.
 fn unloaded_dipole_z(workspace_root: &Path) -> (f64, f64) {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let path = std::env::temp_dir().join(format!("fnec-ld-unloaded-{now}.nec"));
     let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&path, deck).expect("failed to write unloaded deck");
+    let path = common::TempDeck::new("ld-unloaded.nec", deck);
     let (out, _) = run_fnec(&path, workspace_root);
-    let _ = fs::remove_file(&path);
     first_feedpoint_impedance(&out)
 }
 
@@ -76,17 +70,10 @@ fn ld_type4_changes_feedpoint_impedance() {
     // Phase-2: LD is parsed and applied.  LD type 4 (series impedance R=100, X=50)
     // stamps directly into the Z matrix at seg 26, shifting Z_RE well above free-space.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-
-    let loaded_path = std::env::temp_dir().join(format!("fnec-ld-loaded-{now}.nec"));
     let loaded_deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nLD 4 1 26 26 100.0 50.0 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&loaded_path, loaded_deck).expect("failed to write loaded deck");
+    let loaded_path = common::TempDeck::new("ld-loaded.nec", loaded_deck);
 
     let (loaded_out, loaded_err) = run_fnec(&loaded_path, &workspace_root);
-    let _ = fs::remove_file(&loaded_path);
 
     // Phase-2: LD is parsed — no unknown-card warning.
     assert!(
@@ -116,15 +103,12 @@ fn ld_type4_changes_feedpoint_impedance() {
 fn unsupported_ld_type_is_refused() {
     // FND-161: an LD type fnec does not model is refused, naming the card. It used
     // to be skipped with a warning, which solved the antenna without the load.
-    let deck_path =
-        std::env::temp_dir().join(format!("fnec-ld-unsupported-{}.nec", std::process::id()));
     let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nLD 9 1 26 26 1.0 0.0 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write deck with unsupported LD type");
+    let deck_path = common::TempDeck::new("ld-unsupported.nec", deck);
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg(&deck_path)
         .output()
         .expect("run fnec");
-    let _ = fs::remove_file(&deck_path);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         !output.status.success(),
@@ -147,17 +131,15 @@ fn a_negative_ld_type_is_refused() {
     let dipole = "GW 1 21 0 0 -2.5 0 0 2.5 0.001\nEX 0 1 11 0 1.0 0.0\n";
     let tail = "FR 0 1 0 0 29.9 0.0\nEN\n";
     let run = |ld: &str, name: &str| {
-        let path = std::env::temp_dir().join(format!(
-            "fnec-ld-negative-{name}-{}.nec",
-            std::process::id()
-        ));
-        fs::write(&path, format!("{dipole}{ld}{tail}")).expect("write deck");
+        let path = common::TempDeck::new(
+            &format!("ld-negative-{name}.nec"),
+            &format!("{dipole}{ld}{tail}"),
+        );
         let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
             .args(["--exec", "cpu"])
             .arg(&path)
             .output()
             .expect("run fnec");
-        let _ = fs::remove_file(&path);
         out
     };
     for (ld, name) in [
@@ -196,17 +178,10 @@ fn ld_type1_parallel_r_is_supported_and_changes_impedance() {
     // Phase-2: LD type 1 (parallel RLC) is parsed and applied.
     // A 1000 Ω load at the feed raises Z_RE by exactly 1000 Ω.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-
-    let loaded_path = std::env::temp_dir().join(format!("fnec-ld1-loaded-{now}.nec"));
     let loaded_deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nLD 1 1 26 26 1000.0 0.0 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&loaded_path, loaded_deck).expect("failed to write loaded deck");
+    let loaded_path = common::TempDeck::new("ld1-loaded.nec", loaded_deck);
 
     let (loaded_out, loaded_err) = run_fnec(&loaded_path, &workspace_root);
-    let _ = fs::remove_file(&loaded_path);
 
     assert!(
         !loaded_err.contains("unknown card 'LD'"),
@@ -231,17 +206,10 @@ fn ld_type2_is_series_rlc_per_metre() {
     // nec2c 1.3.1 reads 81.420 + j64.704 against the unloaded 79.348 + j46.223:
     // the same shift. fnec read it as a lumped 10 Ω + 1 µH (+10 + j89.22).
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-
-    let loaded_path = std::env::temp_dir().join(format!("fnec-ld2-loaded-{now}.nec"));
     let loaded_deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nLD 2 1 26 26 10.0 1e-6 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&loaded_path, loaded_deck).expect("failed to write loaded deck");
+    let loaded_path = common::TempDeck::new("ld2-loaded.nec", loaded_deck);
 
     let (loaded_out, loaded_err) = run_fnec(&loaded_path, &workspace_root);
-    let _ = fs::remove_file(&loaded_path);
 
     assert!(
         !loaded_err.contains("unknown card 'LD'"),
@@ -274,17 +242,10 @@ fn ld_type3_is_parallel_rlc_per_metre() {
     // the unloaded 79.348 + j46.223. fnec read it as a lumped series 10 Ω + 1 pF:
     // −j11208 Ω.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-
-    let loaded_path = std::env::temp_dir().join(format!("fnec-ld3-loaded-{now}.nec"));
     let loaded_deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nLD 3 1 26 26 10.0 0.0 1e-12\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&loaded_path, loaded_deck).expect("failed to write loaded deck");
+    let loaded_path = common::TempDeck::new("ld3-loaded.nec", loaded_deck);
 
     let (loaded_out, loaded_err) = run_fnec(&loaded_path, &workspace_root);
-    let _ = fs::remove_file(&loaded_path);
 
     assert!(
         !loaded_err.contains("unknown card 'LD'"),

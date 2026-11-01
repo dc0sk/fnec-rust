@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/traceability-matrix-generated.md
 status: living
-last_updated: 2026-10-25
+last_updated: 2026-10-31
 ---
 
 # Traceability matrix (generated — do not hand-edit)
@@ -19,11 +19,11 @@ the citations, then regenerate — never edit this file by hand.
 | FR-002 | Provide CLI and GUI frontends (TUI optional) | implemented | high | review | review — Architectural — apps/nec-cli and apps/nec-gui both ship; GUI is display-dependent. |
 | FR-003 | Parse and execute real-world NEC deck files | implemented | high | test | `apps/nec-cli/tests/corpus_validation.rs:35` |
 | FR-004 | Markdown-based project import/export in addition to NEC decks | implemented | medium | review | review — nec_project crate provides the round-trip; broader workflow is partial (see roadmap). |
-| FR-005 | 4nec2-like text reports for core analysis results | implemented | high | test | `apps/nec-cli/tests/report_contract.rs:122` |
+| FR-005 | 4nec2-like text reports for core analysis results | implemented | high | test | `apps/nec-cli/tests/report_contract.rs:116` |
 | FR-006 | Plugin/scripting extension mechanism, designed in phases | implemented | low | review | review — Phased extension points EP-1..4 ship in nec_model/nec_report (exercised by doctests); mechanism-level, verified by inspection. |
-| FR-007 | Deterministic batch and sweep workflows for scripted studies | implemented | high | test | `apps/nec-cli/tests/sweep_contract.rs:144` |
+| FR-007 | Deterministic batch and sweep workflows for scripted studies | implemented | high | test | `apps/nec-cli/tests/sweep_contract.rs:128` |
 | FR-008 | Stable automation-oriented core APIs (structured output without text scraping) | implemented | high | test | `apps/nec-cli/tests/json_output_contract.rs:70` |
-| FR-009 | Geometry diagnostics that catch invalid/fragile models early with actionable messages | implemented | high | test | `apps/nec-cli/tests/geometry_diagnostics.rs:8` |
+| FR-009 | Geometry diagnostics that catch invalid/fragile models early with actionable messages | implemented | high | test | `apps/nec-cli/tests/geometry_diagnostics.rs:6` |
 | FR-010 | Automation helpers for resonance targeting and convergence studies | implemented | medium | test | `apps/nec-cli/tests/converge_contract.rs:18`<br>`apps/nec-cli/tests/resonance_contract.rs:6` |
 | FR-011 | Tag-range selection for geometry transforms, in syntax NEC-2 does not define | planned | low | review | review — Planned, not built; the review is that the syntax is deliberately not accepted yet. Moves to verification = "test" when implemented.
 

@@ -13,14 +13,11 @@
 //! 1.3.1, captured 2026-10-14.
 use std::process::Command;
 
+mod common;
+
 /// `fnec --solver hallen` on `deck`: Ok((feedpoint Z, stderr)) or Err(stderr).
 fn fnec(deck: &str) -> Result<((f64, f64), String), String> {
-    let dir = std::env::temp_dir().join(format!(
-        "fnec-ground-flags-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let dir = common::TempDir::new("ground-flags");
     let path = dir.join("deck.nec");
     std::fs::write(&path, deck).expect("write deck");
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -28,7 +25,6 @@ fn fnec(deck: &str) -> Result<((f64, f64), String), String> {
         .arg(&path)
         .output()
         .expect("run fnec");
-    let _ = std::fs::remove_dir_all(&dir);
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     if !out.status.success() {
         return Err(stderr);

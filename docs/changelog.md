@@ -154,6 +154,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A GPU device lost during a readback declines to the CPU instead of aborting
+  `fnec`** (FND-321). wgpu 30 reports a lost device by panicking inside
+  `Device::poll`, not by an error, so the "the device was lost — falling back to
+  CPU" path never ran for a loss: an `--exec gpu` solve whose device was lost
+  ended the process. The one wait every readback shares now catches that panic
+  and reports a lost device, with wgpu's own words, and the solve falls back as
+  it does for a timeout. wgpu's panic line still appears on stderr ahead of the
+  warning.
+
 - **A GPU-resident solve is checked against the f64 problem** (FND-307), in the
   CLI and in a `--hosts` worker. The device fills and solves in f32 and judged
   itself against its own fill, and the CLI's residual was against the same f32

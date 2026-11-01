@@ -23,6 +23,8 @@ use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+mod common;
+
 const FREQ_MHZ: f64 = 14.2;
 
 /// Every `key=value` decision reached by a run in a `Holds` cell: coverage read from what
@@ -96,18 +98,11 @@ const DECISION_KEYS: [&str; 9] = [
     "nf_exec",
 ];
 
-fn scratch() -> PathBuf {
-    let d = std::env::temp_dir().join(format!("fnec-parity-{}", std::process::id()));
-    std::fs::create_dir_all(&d).expect("scratch dir");
-    d
-}
-
 /// Run fnec with `args` on `deck`, plus an optional `--loads-config` / `--sweep-config`
 /// file body. A run that outlives [`RUN_TIMEOUT`] has its state captured, then is killed,
 /// and fails the cell by name — never a stalled gate.
 fn run(cell: &str, deck: &str, args: &[&str], files: &[(&str, &str)]) -> Outcome {
-    let dir = scratch().join(cell.replace(['/', ' '], "_"));
-    std::fs::create_dir_all(&dir).expect("cell dir");
+    let dir = common::TempDir::new(&format!("parity-{}", cell.replace(['/', ' '], "_")));
     let deck_path = dir.join("d.nec");
     std::fs::write(&deck_path, deck).expect("write deck");
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_fnec"));
@@ -158,7 +153,7 @@ fn run(cell: &str, deck: &str, args: &[&str], files: &[(&str, &str)]) -> Outcome
     };
     let stdout = out_t.join().expect("stdout reader");
     let stderr = err_t.join().expect("stderr reader");
-    let _ = std::fs::remove_dir_all(&dir);
+    drop(dir);
     parse(status.success(), &stdout, &stderr)
 }
 
@@ -1786,7 +1781,6 @@ fn parity_sweep() {
         }
     });
     let results = results.into_inner().unwrap();
-    let _ = std::fs::remove_dir_all(scratch());
 
     let failures: Vec<_> = results
         .iter()
@@ -1974,8 +1968,7 @@ fn capture_nec2c_goldens() {
          # An id@Sx row is nec2c at S times that deck's mesh (scripts/nec2c-converged-series.py,\n\
          # thin kernel): the converged series of a cell that gates against it (CONVERGED_LOW_REFS).\n"
     );
-    let dir = std::env::temp_dir().join("n2c");
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = common::TempDir::new("n2c");
     let mut decks: Vec<(String, String)> = placements()
         .into_iter()
         .map(|(g, gr)| {
@@ -2059,7 +2052,7 @@ fn capture_nec2c_goldens() {
             m *= 3;
         }
     }
-    let _ = std::fs::remove_dir_all(&dir);
+    drop(dir);
     std::fs::write(nec2c_golden_path(), out).unwrap();
 }
 

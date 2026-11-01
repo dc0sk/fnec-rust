@@ -4,10 +4,10 @@
 // PH9-CHK-004: PT (print-control) card runtime semantics — filter the segment
 // current output by mode / tag / segment range, as NEC-2 reads the card (FND-299).
 
-use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+
+mod common;
 
 fn run_stdout(deck: &str, name: &str) -> String {
     run_both(deck, name).0
@@ -15,19 +15,13 @@ fn run_stdout(deck: &str, name: &str) -> String {
 
 fn run_both(deck: &str, name: &str) -> (String, String) {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let path = std::env::temp_dir().join(format!("fnec-{name}-{now}.nec"));
-    fs::write(&path, deck).unwrap();
+    let path = common::TempDeck::new(&format!("{name}.nec"), deck);
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .args(["--solver", "hallen", "--exec", "cpu"])
         .arg(&path)
         .current_dir(&root)
         .output()
         .unwrap();
-    let _ = fs::remove_file(&path);
     (
         String::from_utf8_lossy(&out.stdout).into_owned(),
         String::from_utf8_lossy(&out.stderr).into_owned(),

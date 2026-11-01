@@ -19,10 +19,10 @@
 //! FND-299 (`PT`'s range through the same resolver) rides along, being the same
 //! rule; FND-292 (negative `LD` types) is pinned in `ld_loads.rs`.
 
-use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+
+mod common;
 
 struct Run {
     status: std::process::ExitStatus,
@@ -32,19 +32,13 @@ struct Run {
 
 fn run(deck: &str, name: &str, args: &[&str]) -> Run {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let path = std::env::temp_dir().join(format!("fnec-tag0-{name}-{now}.nec"));
-    fs::write(&path, deck).unwrap();
+    let path = common::TempDeck::new(&format!("tag0-{name}.nec"), deck);
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .args(args)
         .arg(&path)
         .current_dir(&root)
         .output()
         .unwrap();
-    let _ = fs::remove_file(&path);
     Run {
         status: out.status,
         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),

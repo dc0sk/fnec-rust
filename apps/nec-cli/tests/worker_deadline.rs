@@ -26,20 +26,19 @@ use nec_worker::WorkerPool;
 use std::io::Write;
 use std::time::Duration;
 
+mod common;
+
 /// A worker that reads its task and never writes anything back. Not a crash and
 /// not a disconnect: the process stays alive and the pipe stays open, which is
 /// the only case that hung forever (a dead socket already errored out via the
 /// kernel's retransmission timeout).
-fn wedging_stub() -> std::path::PathBuf {
+/// The directory guard comes back with the stub's path; it removes the stub when
+/// the test drops it.
+fn wedging_stub() -> (common::TempDir, std::path::PathBuf) {
     // Per-TEST, not per-process. Both tests in this file call this, cargo runs
-    // them as threads of one process, and the loser's cleanup deletes the
-    // winner's stub mid-run. Third time this shape has bitten in this session.
-    let dir = std::env::temp_dir().join(format!(
-        "fnec-wedge-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    // them as threads of one process, and the loser's cleanup deleted the
+    // winner's stub mid-run while the directory was keyed on the pid alone.
+    let dir = common::TempDir::new("wedge");
     let staged = dir.join("stub.staging");
     let path = dir.join("wedge-worker.sh");
     {
@@ -55,14 +54,7 @@ fn wedging_stub() -> std::path::PathBuf {
     // writing. See worker_task_fault.rs for why that is not sufficient on its
     // own, and why this test binary is separate.
     std::fs::rename(&staged, &path).expect("stage stub into place");
-    path
-}
-
-/// Remove the directory the stub lives in. Each test owns its own.
-fn clean_up(stub: &std::path::Path) {
-    if let Some(dir) = stub.parent() {
-        let _ = std::fs::remove_dir_all(dir);
-    }
+    (dir, path)
 }
 
 /// Spawn a pool, retrying while the stub reads as "Text file busy".
@@ -116,8 +108,7 @@ fn task(id: &str) -> nec_worker::TaskMessage {
 #[cfg(unix)]
 #[test]
 fn a_worker_that_ignores_shutdown_is_killed_rather_than_waited_on() {
-    let stub = wedging_stub();
-    let stub_path = stub.clone();
+    let (stub_dir, stub) = wedging_stub();
     let (tx, rx) = std::sync::mpsc::channel();
 
     std::thread::spawn(move || {
@@ -128,14 +119,13 @@ fn a_worker_that_ignores_shutdown_is_killed_rather_than_waited_on() {
 
     rx.recv_timeout(Duration::from_secs(30))
         .expect("shutdown never returned: the grace period is not being applied");
-    clean_up(&stub_path);
+    drop(stub_dir);
 }
 
 #[cfg(unix)]
 #[test]
 fn a_worker_that_never_answers_is_evicted_rather_than_waited_on() {
-    let stub = wedging_stub();
-    let stub_path = stub.clone();
+    let (stub_dir, stub) = wedging_stub();
     let (tx, rx) = std::sync::mpsc::channel();
 
     std::thread::spawn(move || {
@@ -158,5 +148,5 @@ fn a_worker_that_never_answers_is_evicted_rather_than_waited_on() {
         remaining, 0,
         "a worker that never answers is a worker fault and must be evicted"
     );
-    clean_up(&stub_path);
+    drop(stub_dir);
 }

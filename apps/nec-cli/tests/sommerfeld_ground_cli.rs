@@ -11,20 +11,16 @@
 
 use std::process::Command;
 
+mod common;
+
 fn feedpoint_r(extra_args: &[&str], deck: &str) -> f64 {
-    let dir = std::env::temp_dir();
-    let path = dir.join(format!(
-        "fnec-somm-cli-{}.nec",
-        std::process::id() as u64 + fastrand_seed()
-    ));
-    std::fs::write(&path, deck).expect("write deck");
+    let path = common::TempDeck::new("somm-cli.nec", deck);
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_fnec"));
     cmd.arg("--solver").arg("hallen");
     for a in extra_args {
         cmd.arg(a);
     }
     let out = cmd.arg(&path).output().expect("run fnec");
-    let _ = std::fs::remove_file(&path);
     assert!(
         out.status.success(),
         "fnec failed: {}",
@@ -43,15 +39,6 @@ fn feedpoint_r(extra_args: &[&str], deck: &str) -> f64 {
             }
         })
         .expect("no feedpoint row")
-}
-
-// Tiny unique-ish suffix so parallel test cases don't collide on the temp file.
-fn fastrand_seed() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .subsec_nanos() as u64
 }
 
 const FREE: &str =
@@ -99,19 +86,13 @@ fn ground_solver_rcm_is_the_unchanged_default() {
 
 /// Run a deck and return stderr, for the diagnostics contracts below.
 fn stderr_of(extra_args: &[&str], deck: &str) -> String {
-    let dir = std::env::temp_dir();
-    let path = dir.join(format!(
-        "fnec-somm-warn-{}.nec",
-        std::process::id() as u64 + fastrand_seed()
-    ));
-    std::fs::write(&path, deck).expect("write deck");
+    let path = common::TempDeck::new("somm-warn.nec", deck);
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_fnec"));
     cmd.arg("--solver").arg("hallen");
     for a in extra_args {
         cmd.arg(a);
     }
     let out = cmd.arg(&path).output().expect("run fnec");
-    let _ = std::fs::remove_file(&path);
     assert!(out.status.success(), "fnec failed: {out:?}");
     String::from_utf8_lossy(&out.stderr).into_owned()
 }
@@ -195,18 +176,13 @@ fn a_receive_deck_says_the_sommerfeld_correction_does_not_apply() {
 
 /// Every feedpoint row's `(R, X)`.
 fn feedpoint_zs(extra_args: &[&str], deck: &str) -> Vec<(f64, f64)> {
-    let path = std::env::temp_dir().join(format!(
-        "fnec-somm-zs-{}.nec",
-        std::process::id() as u64 + fastrand_seed()
-    ));
-    std::fs::write(&path, deck).expect("write deck");
+    let path = common::TempDeck::new("somm-zs.nec", deck);
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .args(["--solver", "hallen"])
         .args(extra_args)
         .arg(&path)
         .output()
         .expect("run fnec");
-    let _ = std::fs::remove_file(&path);
     assert!(out.status.success(), "fnec failed: {out:?}");
     String::from_utf8_lossy(&out.stdout)
         .lines()

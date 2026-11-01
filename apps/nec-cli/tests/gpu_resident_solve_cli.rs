@@ -139,8 +139,7 @@ EX 0 1 151 0 1.0 0.0
 FR 0 3 0 0 14.0 0.15
 EN
 ";
-    let path = std::env::temp_dir().join("fnec-gpu-resident-301seg.nec");
-    std::fs::write(&path, deck).expect("write deck");
+    let path = common::TempDeck::new("gpu-resident-301seg.nec", deck);
 
     let run = |exec: &str| {
         let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -183,7 +182,6 @@ EN
             _ => Ok(z),
         }
     });
-    let _ = std::fs::remove_file(&path);
     let Ok(gpu) = attempt else {
         eprintln!("SKIP: no wgpu adapter on this host — the GPU solve never ran");
         return;
@@ -224,12 +222,10 @@ fn a_deck_past_the_old_gpu_ceilings_solves_on_the_device() {
         eprintln!("SKIP: no hardware GPU adapter");
         return;
     }
-    let path = std::env::temp_dir().join(format!("fnec-gpu-2049seg-{}.nec", std::process::id()));
-    std::fs::write(
-        &path,
+    let path = common::TempDeck::new(
+        "gpu-2049seg.nec",
         "GW 1 2049 0 0 -5.282 0 0 5.282 0.001\nGE\nEX 0 1 1025 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
-    )
-    .expect("write deck");
+    );
     // Any decline of its size is this test's failure; a lost device earns one
     // re-run (FND-215).
     let stdout = gpu_attempt("the 2049-segment solve", || {
@@ -251,7 +247,6 @@ fn a_deck_past_the_old_gpu_ceilings_solves_on_the_device() {
         }
     })
     .expect("a GPU is expected");
-    let _ = std::fs::remove_file(&path);
     let row = stdout
         .lines()
         .skip_while(|l| *l != "FEEDPOINTS")
@@ -270,14 +265,12 @@ fn a_deck_past_the_old_gpu_ceilings_solves_on_the_device() {
 
 /// Run fnec on a scratch copy of `deck` with `args`; (stdout, stderr).
 fn run_deck(name: &str, deck: &str, args: &[&str]) -> (String, String) {
-    let path = std::env::temp_dir().join(format!("fnec-fill-{name}-{}.nec", std::process::id()));
-    std::fs::write(&path, deck).expect("write deck");
+    let path = common::TempDeck::new(&format!("fill-{name}.nec"), deck);
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .args(args)
         .arg(&path)
         .output()
         .unwrap_or_else(|e| panic!("failed to spawn fnec: {e}"));
-    let _ = std::fs::remove_file(&path);
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     assert!(out.status.success(), "fnec {args:?} failed:\n{stderr}");
     (String::from_utf8_lossy(&out.stdout).into_owned(), stderr)
@@ -356,4 +349,24 @@ fn the_record_names_where_the_matrix_was_filled() {
         common::assert_diag_field(&stderr, "fill_exec", fill);
         common::assert_diag_field(&stderr, "solve_exec", "gpu");
     }
+}
+
+/// FND-321: a device lost under the resident solve leaves the default panic
+/// hook's line from inside wgpu's `Device::poll` on stderr, then the fallback
+/// warning. The two together are a transient miss, worth the shared re-run —
+/// not a deterministic decline. A synthetic stderr, since a real loss cannot be
+/// produced on demand.
+#[test]
+fn a_lost_device_s_panic_line_and_fallback_read_as_a_miss() {
+    let stderr = "thread 'main' panicked at wgpu-30.0.1/src/backend/wgpu_core.rs:1924:9:\n\
+                  Error in Device::poll: Validation Error\n\n\
+                  Caused by:\n  Parent device is lost\n\n\
+                  warning: solve_hallen_gpu_resident: the device was lost (wgpu: Error in \
+                  Device::poll: Validation Error Caused by: Parent device is lost) — falling \
+                  back to CPU\n";
+    assert!(
+        matches!(classify_gpu_stderr(stderr), GpuRun::Missed(l) if l.contains("the device was lost")),
+        "{:?}",
+        classify_gpu_stderr(stderr)
+    );
 }

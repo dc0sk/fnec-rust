@@ -11,6 +11,8 @@
 
 use base64::Engine;
 
+mod common;
+
 fn task() -> nec_worker::TaskMessage {
     let deck = include_str!("../../../corpus/dipole-freesp-51seg.nec");
     nec_worker::TaskMessage {
@@ -28,9 +30,8 @@ fn task() -> nec_worker::TaskMessage {
 
 /// A stand-in for an fnec from before the refinement: it answers every task
 /// with a well-formed result that carries no `mesh`.
-fn old_worker() -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("fnec-worker-mesh-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+fn old_worker() -> (common::TempDir, std::path::PathBuf) {
+    let dir = common::TempDir::new("worker-mesh");
     let path = dir.join("old-fnec");
     std::fs::write(
         &path,
@@ -42,12 +43,12 @@ fn old_worker() -> std::path::PathBuf {
     .expect("write stand-in");
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-    path
+    (dir, path)
 }
 
 #[test]
 fn a_worker_on_another_mesh_is_refused_and_kept() {
-    let old = old_worker();
+    let (old_dir, old) = old_worker();
     // A test thread forking while the script was being written can still hold it
     // open for writing ("Text file busy"); that clears within moments.
     let mut pool = (0..100)
@@ -75,7 +76,7 @@ fn a_worker_on_another_mesh_is_refused_and_kept() {
         "the worker stays: the task failed, not the host"
     );
     pool.shutdown_all();
-    let _ = std::fs::remove_dir_all(old.parent().expect("dir"));
+    drop(old_dir);
 }
 
 /// The negative control: this build's own worker is on this build's mesh.
