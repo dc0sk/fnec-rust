@@ -571,6 +571,7 @@ fn solve_inner(
         );
     let device_currents = if gpu_eligible {
         let (merged_endpoints, junction_tuples) = merged;
+        let n = segs.len();
         let z_inputs: Vec<nec_accel::ZSegmentInput> = segs
             .iter()
             .map(|s| nec_accel::ZSegmentInput {
@@ -594,7 +595,37 @@ fn solve_inner(
             ),
             freq_hz,
         )) {
-            Ok(x) if x.len() >= segs.len() => Some(x[..segs.len()].to_vec()),
+            // Checked against the f64 problem, `z_mat`, as the CLI checks it: the
+            // device judges only itself, against its own f32 fill, and this arm
+            // computed no residual at all (FND-307). Above the shared bound the
+            // routed CPU solve below answers, with the warning.
+            Ok(x) if x.len() >= n => {
+                let (currents, c_hom_per_wire) = x.split_at(n);
+                nec_solver::check_currents_finite(currents)
+                    .map_err(|e| SolveError::UnsupportedConfig(e.to_string()))?;
+                let h = nec_solver::hallen_homogeneous(
+                    &hallen_rhs.cos_vec,
+                    &hallen_rhs.sin_vec,
+                    c_hom_per_wire,
+                    &merged_endpoints,
+                    &junction_tuples,
+                );
+                let (_, rel) = nec_solver::ResidualInputs::plain(
+                    h,
+                    hallen_rhs.rhs.clone(),
+                    merged_endpoints.clone(),
+                )
+                .residual(&z_mat, currents);
+                let max = nec_solver::validate::device_residual_max()
+                    .map_err(SolveError::UnsupportedConfig)?;
+                match nec_solver::validate::device_residual_decline(rel, max) {
+                    Some(w) => {
+                        warnings.push(w);
+                        None
+                    }
+                    None => Some(currents.to_vec()),
+                }
+            }
             // No adapter, a device fault, or a rejected f32 answer (or a short
             // result) — the routed CPU solve below, which `exec_used` reports.
             _ => None,
@@ -605,11 +636,12 @@ fn solve_inner(
 
     let (currents, exec_used) = if let Some(x) = device_currents {
         // No FND-302 caveat on the device's answer, by the shared predicate and
-        // not by omission: an f32 solve is judged by the device itself (1e-4,
-        // declining to the CPU arm below, which is judged). Checked at compile
-        // time, so a change to the predicate breaks this arm's build.
+        // not by omission: it was judged above against the f64 problem at
+        // `DEVICE_REL_RESIDUAL_MAX` (FND-307), declining to the CPU arm below,
+        // which is judged. Checked at compile time, so a change to the predicate
+        // breaks this arm's build.
         const _: () =
-            assert!(!nec_solver::validate::ResidualKind::DeviceF32.judged_by_hallen_caveat());
+            assert!(!nec_solver::validate::ResidualKind::DeviceSolveF64.judged_by_hallen_caveat());
         (x, "gpu")
     } else {
         // One call for every Hallén route: plane-wave, current-source, and

@@ -40,9 +40,11 @@ const GPU_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120
 
 /// Wait for submitted GPU work and the buffer map to complete, for at most
 /// [`GPU_WAIT_TIMEOUT`]. `Err` names why not: the device was lost, the wait timed
-/// out, or the map failed — callers then degrade to the CPU path instead of
-/// panicking, so a mid-run GPU fault does not abort the process (G9,
-/// review-260821), and a fault that never resolves does not hang it (FND-196).
+/// out, or the map failed — callers then degrade to the CPU path, so a mid-run GPU
+/// fault does not abort the process (G9, review-260821), and a fault that never
+/// resolves does not hang it (FND-196). wgpu 30 reports a lost device by
+/// panicking inside `Device::poll`, not by an `Err`; [`guarded_poll`] catches it
+/// (FND-321).
 fn await_map<E: std::fmt::Display>(
     device: &wgpu::Device,
     rx: &std::sync::mpsc::Receiver<Result<(), E>>,
@@ -77,29 +79,70 @@ struct ReadbackFault {
     device_suspect: bool,
 }
 
+/// The device's wait for the submitted work, given the time it may take, with
+/// each way it can fail turned into a [`ReadbackFault`].
+///
+/// wgpu 30's `Device::poll` returns `Err` only for a `Timeout` or a
+/// `WrongSubmissionIndex` (`to_poll_error`). Every device error — lost, out of
+/// memory, "unexpected", which wgpu treats as lost — arrives as a **panic** from
+/// `poll` (`handle_error_fatal`), after wgpu has already marked the device lost,
+/// so a caught panic here is a dead device by construction (FND-321). The payload
+/// goes into the reason word for word, on one line, so a wgpu panic that is not a
+/// loss still says what it was.
+fn guarded_poll(
+    poll: impl FnOnce(std::time::Duration) -> Result<(), wgpu::PollError>,
+    timeout: std::time::Duration,
+) -> Result<(), ReadbackFault> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| poll(timeout))) {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(wgpu::PollError::Timeout)) => Err(ReadbackFault {
+            why: format!(
+                "the GPU did not finish within {} s — a device fault the driver did \
+                 not report as a lost device (FND-196)",
+                timeout.as_secs_f64()
+            ),
+            device_suspect: true,
+        }),
+        // Only `WrongSubmissionIndex`, which `submission_index: None` cannot
+        // produce. Still blamed on the device: one rebuild is cheap.
+        Ok(Err(other)) => Err(ReadbackFault {
+            why: format!(
+                "wgpu rejected the wait ({other}) — a bug in the poll call, not a device fault"
+            ),
+            device_suspect: true,
+        }),
+        Err(payload) => {
+            // The same extraction as `nec_worker`'s `process_task_caught`, which
+            // this crate cannot depend on.
+            let what = payload
+                .downcast_ref::<&str>()
+                .map(|s| (*s).to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "panic with a non-string payload".to_string());
+            Err(ReadbackFault {
+                // wgpu's text spans lines; one warning line keeps its words.
+                why: format!(
+                    "the device was lost (wgpu: {})",
+                    what.split_whitespace().collect::<Vec<_>>().join(" ")
+                ),
+                device_suspect: true,
+            })
+        }
+    }
+}
+
 /// The bounded wait itself, touching no process-wide state: `poll` (the device's
-/// wait for the submitted work, given the time it may take), then the map
-/// callback, together within `timeout`. The poll is a parameter so each outcome —
-/// a timeout above all — can be tested without racing a real GPU.
+/// wait for the submitted work, given the time it may take, through
+/// [`guarded_poll`]), then the map callback, together within `timeout`. The poll
+/// is a parameter so each outcome — a timeout, a lost device's panic — can be
+/// tested without racing a real GPU.
 fn wait_readback<E: std::fmt::Display>(
     poll: impl FnOnce(std::time::Duration) -> Result<(), wgpu::PollError>,
     rx: &std::sync::mpsc::Receiver<Result<(), E>>,
     timeout: std::time::Duration,
 ) -> Result<(), ReadbackFault> {
     let start = std::time::Instant::now();
-    if let Err(e) = poll(timeout) {
-        return Err(ReadbackFault {
-            why: match e {
-                wgpu::PollError::Timeout => format!(
-                    "the GPU did not finish within {} s — a device fault the driver did \
-                     not report as a lost device (FND-196)",
-                    timeout.as_secs_f64()
-                ),
-                other => format!("the device was lost ({other})"),
-            },
-            device_suspect: true,
-        });
-    }
+    guarded_poll(poll, timeout)?;
     // The poll returned, so the map callback has run or is about to; bounded all
     // the same, since a callback that never arrives would block here instead.
     let left = timeout
@@ -1626,7 +1669,7 @@ pub struct GpuMicrobench {
 /// minimum over `reps` as the headline figure to reject positive-only wall-clock
 /// noise (the source of the across-process gate's flakiness).
 ///
-/// Returns `None` when no wgpu adapter is available.
+/// Returns `None` when no wgpu adapter is available, or the device fails a wait.
 pub async fn microbench_zmatrix_dispatch(
     segments: &[ZSegmentInput],
     freq_hz: f64,
@@ -1776,22 +1819,20 @@ pub async fn microbench_zmatrix_dispatch(
             cpass.dispatch_workgroups(gx, gy, 1);
         }
         queue.submit(std::iter::once(encoder.finish()));
-        device
-            .poll(wgpu::PollType::Wait {
-                submission_index: None,
-                timeout: None,
-            })
-            .unwrap();
+        // Bounded and guarded like a production readback (FND-196, FND-321),
+        // though nothing in production runs this benchmark.
+        guarded_poll(|t| device.poll(wait_for(t)).map(|_| ()), GPU_WAIT_TIMEOUT)
+            .map_err(|fault| eprintln!("warning: microbench_zmatrix_dispatch: {}", fault.why))
     };
 
     // ---- warm-up (shader compile / lazy init), then timed reps ------------
     for _ in 0..2 {
-        one_dispatch();
+        one_dispatch().ok()?;
     }
     let mut times: Vec<u64> = Vec::with_capacity(reps);
     for _ in 0..reps {
         let t = Instant::now();
-        one_dispatch();
+        one_dispatch().ok()?;
         times.push(t.elapsed().as_micros() as u64);
     }
     times.sort_unstable();
@@ -2814,6 +2855,50 @@ mod wait_timeout_tests {
         .expect_err("a callback that never arrives is a fault");
         assert!(
             fault.device_suspect && fault.why.contains("never completed"),
+            "{fault:?}"
+        );
+    }
+
+    /// FND-321: wgpu 30 reports a lost device by panicking inside `Device::poll`
+    /// (`Error in Device::poll: …`), never by an `Err`. The wait catches it and
+    /// reports a lost, suspect device with wgpu's words, rather than unwinding
+    /// through the solve and aborting `fnec`.
+    #[test]
+    fn a_poll_that_panics_is_a_lost_device() {
+        let (_tx, rx) = mpsc::channel::<Result<(), String>>();
+        let fault = wait_readback(
+            |_| {
+                panic!(
+                    "{}",
+                    String::from("Error in Device::poll: Validation Error\n\nCaused by:\n  Parent device is lost\n")
+                )
+            },
+            &rx,
+            GPU_WAIT_TIMEOUT,
+        )
+        .expect_err("a panicking poll is a fault");
+        assert!(
+            fault.device_suspect
+                && fault
+                    .why
+                    .starts_with("the device was lost (wgpu: Error in Device::poll")
+                && fault
+                    .why
+                    .contains("Validation Error Caused by: Parent device is lost)")
+                && !fault.why.contains('\n'),
+            "{fault:?}"
+        );
+    }
+
+    /// The same for a `&'static str` payload, the other form a panic carries.
+    #[test]
+    fn a_poll_that_panics_with_a_str_is_a_lost_device() {
+        let (_tx, rx) = mpsc::channel::<Result<(), String>>();
+        let fault = wait_readback(|_| panic!("Parent device is lost"), &rx, GPU_WAIT_TIMEOUT)
+            .expect_err("a panicking poll is a fault");
+        assert!(
+            fault.device_suspect
+                && fault.why == "the device was lost (wgpu: Parent device is lost)",
             "{fault:?}"
         );
     }
