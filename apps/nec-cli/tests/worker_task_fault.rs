@@ -20,6 +20,8 @@
 use base64::Engine;
 use nec_worker::WorkerPool;
 
+mod common;
+
 const HEALTHY_DECK: &str = "corpus/dipole-freesp-51seg.nec";
 
 fn task(id: &str, deck_path: &str) -> nec_worker::TaskMessage {
@@ -49,10 +51,9 @@ fn task(id: &str, deck_path: &str) -> nec_worker::TaskMessage {
 /// fault at all, so a pool test driven by that deck passes with the eviction bug
 /// fully restored. It proved the pool survives a deck it CAN price. This stub
 /// produces the fault directly.
-fn stub_worker_emitting_unusable_results() -> std::path::PathBuf {
+fn stub_worker_emitting_unusable_results() -> (common::TempDir, std::path::PathBuf) {
     use std::io::Write;
-    let dir = std::env::temp_dir().join(format!("fnec-stub-worker-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let dir = common::TempDir::new("stub-worker");
     let staged = dir.join("stub-worker.staging");
     let path = dir.join("stub-worker.sh");
 
@@ -76,7 +77,7 @@ fn stub_worker_emitting_unusable_results() -> std::path::PathBuf {
             .expect("chmod stub");
     }
     std::fs::rename(&staged, &path).expect("stage stub into place");
-    path
+    (dir, path)
 }
 
 /// The taxonomy itself: an unusable RESULT is not a dead WORKER.
@@ -88,7 +89,7 @@ fn stub_worker_emitting_unusable_results() -> std::path::PathBuf {
 #[cfg(unix)]
 #[test]
 fn an_unusable_result_fails_the_task_and_keeps_the_worker() {
-    let stub = stub_worker_emitting_unusable_results();
+    let (stub_dir, stub) = stub_worker_emitting_unusable_results();
     let mut pool = WorkerPool::new_local(1, stub.to_str().expect("path")).expect("spawn stub");
 
     let first = pool.dispatch(&task("t-1", HEALTHY_DECK));
@@ -111,5 +112,5 @@ fn an_unusable_result_fails_the_task_and_keeps_the_worker() {
     assert_eq!(pool.len(), 1, "still one worker after a second task fault");
 
     pool.shutdown_all();
-    let _ = std::fs::remove_dir_all(stub.parent().expect("dir"));
+    drop(stub_dir);
 }

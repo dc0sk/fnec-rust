@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::time::{SystemTime, UNIX_EPOCH};
+
+mod common;
 
 fn run_fnec_output(deck_path: &Path, workspace_root: &Path, extra_args: &[&str]) -> Output {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_fnec"));
@@ -46,20 +47,14 @@ fn first_feedpoint_impedance(stdout: &str) -> (f64, f64) {
 /// Helper: an incident plane-wave EX type (1/2/3) solves on --solver hallen and
 /// reports induced CURRENTS (receive solve). Used for the elliptic types 2/3.
 fn assert_ex_plane_wave_solves(ex_type: u8, workspace_root: &Path) {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-ex{ex_type}-pw-{now}.nec"));
     // EX N NTHETA NPHI 0 THETA PHI ETA — plane wave from θ=30°.
     let deck = format!(
         "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX {ex_type} 1 1 0 30.0 0.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n"
     );
-    fs::write(&deck_path, deck).expect("failed to write deck");
+    let deck_path = common::TempDeck::new(&format!("ex{ex_type}-pw.nec"), &deck);
     let output = run_fnec_output(&deck_path, workspace_root, &["--solver", "hallen"]);
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    let _ = fs::remove_file(&deck_path);
     assert!(
         output.status.success(),
         "EX type {ex_type} plane wave should solve on hallen; stderr:\n{stderr}"
@@ -86,21 +81,14 @@ fn ex_type1_plane_wave_solves_on_hallen() {
     // straight wire with --solver hallen it SOLVES (receiving antenna) and
     // reports induced currents — no "is not yet supported" rejection.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-
-    let path = std::env::temp_dir().join(format!("fnec-ex1-planewave-{now}.nec"));
     // EX 1 NTHETA NPHI 0 THETA PHI ETA — plane wave from θ=30°, φ=0, linear.
     let deck =
         "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 1 1 1 0 30.0 0.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&path, deck).expect("failed to write EX type 1 plane-wave deck");
+    let path = common::TempDeck::new("ex1-planewave.nec", deck);
 
     let output = run_fnec_output(&path, &workspace_root, &["--solver", "hallen"]);
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    let _ = fs::remove_file(&path);
 
     assert!(
         output.status.success(),
@@ -121,15 +109,9 @@ fn ex_type1_plane_wave_requires_hallen_solver() {
     // A plane wave is solved only on the Hallén path; --solver pulse fails fast
     // with an actionable diagnostic rather than silently mis-solving.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-
-    let ex1_path = std::env::temp_dir().join(format!("fnec-ex1-pulse-{now}.nec"));
     let ex1_deck =
         "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 1 1 1 0 30.0 0.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&ex1_path, ex1_deck).expect("failed to write EX type 1 pulse deck");
+    let ex1_path = common::TempDeck::new("ex1-pulse.nec", ex1_deck);
 
     let output = run_fnec_output(
         &ex1_path,
@@ -137,7 +119,6 @@ fn ex_type1_plane_wave_requires_hallen_solver() {
         &["--solver", "pulse", "--experimental-solver"],
     );
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    let _ = fs::remove_file(&ex1_path);
 
     assert!(
         !output.status.success(),
@@ -154,15 +135,9 @@ fn ex_type4_current_source_requires_hallen_solver() {
     // PH8-CHK-001: EX type 4 (current source) is solved only on the Hallén path;
     // --solver pulse fails fast with an actionable diagnostic.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-
-    let ex4_path = std::env::temp_dir().join(format!("fnec-ex4-pulse-{now}.nec"));
     let ex4_deck =
         "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 4 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&ex4_path, ex4_deck).expect("failed to write EX type 4 pulse deck");
+    let ex4_path = common::TempDeck::new("ex4-pulse.nec", ex4_deck);
 
     let output = run_fnec_output(
         &ex4_path,
@@ -170,7 +145,6 @@ fn ex_type4_current_source_requires_hallen_solver() {
         &["--solver", "pulse", "--experimental-solver"],
     );
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    let _ = fs::remove_file(&ex4_path);
 
     assert!(
         !output.status.success(),
@@ -187,15 +161,9 @@ fn ex_type5_voltage_source_solves_under_pulse() {
     // PH8-CHK-003: EX type 5 is a voltage source; it solves under --solver pulse
     // (fnec models it via the applied-field method, same as type 0).
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-
-    let ex5_path = std::env::temp_dir().join(format!("fnec-ex5-pulse-{now}.nec"));
     let ex5_deck =
         "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 5 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&ex5_path, ex5_deck).expect("failed to write EX type 5 pulse deck");
+    let ex5_path = common::TempDeck::new("ex5-pulse.nec", ex5_deck);
 
     let output = run_fnec_output(
         &ex5_path,
@@ -203,7 +171,6 @@ fn ex_type5_voltage_source_solves_under_pulse() {
         &["--solver", "pulse", "--experimental-solver"],
     );
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    let _ = fs::remove_file(&ex5_path);
 
     assert!(
         output.status.success(),
@@ -227,26 +194,17 @@ fn ex_type4_current_source_matches_voltage_source_impedance() {
     // feedpoint impedance as a voltage source (type 0) at the same feed — the
     // port impedance is a property of the antenna, independent of drive type.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-
     let geom = "GW 1 51 0 0 -5.282 0 0 5.282 0.001";
     let fr = "FR 0 1 0 0 14.2 0.0\nEN\n";
 
-    let v_path = std::env::temp_dir().join(format!("fnec-ex0-{now}.nec"));
-    fs::write(&v_path, format!("{geom}\nEX 0 1 26 0 1.0 0.0\n{fr}")).expect("write v deck");
+    let v_path = common::TempDeck::new("ex0.nec", &format!("{geom}\nEX 0 1 26 0 1.0 0.0\n{fr}"));
     let v_out = run_fnec_output(&v_path, &workspace_root, &["--solver", "hallen"]);
     let (zr_v, zi_v) = first_feedpoint_impedance(&String::from_utf8_lossy(&v_out.stdout));
-    let _ = fs::remove_file(&v_path);
 
-    let c_path = std::env::temp_dir().join(format!("fnec-ex4-{now}.nec"));
-    fs::write(&c_path, format!("{geom}\nEX 4 1 26 0 1.0 0.0\n{fr}")).expect("write cs deck");
+    let c_path = common::TempDeck::new("ex4.nec", &format!("{geom}\nEX 4 1 26 0 1.0 0.0\n{fr}"));
     let c_out = run_fnec_output(&c_path, &workspace_root, &["--solver", "hallen"]);
     let c_stdout = String::from_utf8_lossy(&c_out.stdout).into_owned();
     let (zr_c, zi_c) = first_feedpoint_impedance(&c_stdout);
-    let _ = fs::remove_file(&c_path);
 
     assert!(
         c_out.status.success(),
@@ -265,25 +223,17 @@ fn ex_type5_matches_ex_type0_feedpoint_impedance() {
     // PH8-CHK-003: EX type 5 (voltage source, current-slope) is modelled by fnec
     // via the applied-field method, so its feedpoint impedance equals type 0's.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
     let geom = "GW 1 51 0 0 -5.282 0 0 5.282 0.001";
     let fr = "FR 0 1 0 0 14.2 0.0\nEN\n";
 
-    let p0 = std::env::temp_dir().join(format!("fnec-ex0-cmp-{now}.nec"));
-    fs::write(&p0, format!("{geom}\nEX 0 1 26 0 1.0 0.0\n{fr}")).expect("write");
+    let p0 = common::TempDeck::new("ex0-cmp.nec", &format!("{geom}\nEX 0 1 26 0 1.0 0.0\n{fr}"));
     let (zr0, zi0) = first_feedpoint_impedance(&String::from_utf8_lossy(
         &run_fnec_output(&p0, &workspace_root, &["--solver", "hallen"]).stdout,
     ));
-    let _ = fs::remove_file(&p0);
 
-    let p5 = std::env::temp_dir().join(format!("fnec-ex5-cmp-{now}.nec"));
-    fs::write(&p5, format!("{geom}\nEX 5 1 26 0 1.0 0.0\n{fr}")).expect("write");
+    let p5 = common::TempDeck::new("ex5-cmp.nec", &format!("{geom}\nEX 5 1 26 0 1.0 0.0\n{fr}"));
     let out5 = run_fnec_output(&p5, &workspace_root, &["--solver", "hallen"]);
     let (zr5, zi5) = first_feedpoint_impedance(&String::from_utf8_lossy(&out5.stdout));
-    let _ = fs::remove_file(&p5);
 
     assert!(
         out5.status.success(),
@@ -302,16 +252,10 @@ fn ex_type3_i4_runtime_mode_divide_by_i4_scales_source_and_current() {
     // "normalized voltage source" meaning predates the NEC2 EX-type alignment)
     // and must not prevent the plane-wave solve.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-
-    let ex3_i4_path = std::env::temp_dir().join(format!("fnec-ex3-i4-{now}.nec"));
     // EX 3 NTHETA NPHI I4 THETA PHI ETA — plane wave; I4 is unused for plane waves.
     let ex3_i4_deck =
         "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 3 1 1 2 30.0 0.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&ex3_i4_path, ex3_i4_deck).expect("failed to write EX type 3 I4 deck");
+    let ex3_i4_path = common::TempDeck::new("ex3-i4.nec", ex3_i4_deck);
 
     let output = run_fnec_output(
         &ex3_i4_path,
@@ -320,7 +264,6 @@ fn ex_type3_i4_runtime_mode_divide_by_i4_scales_source_and_current() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    let _ = fs::remove_file(&ex3_i4_path);
 
     assert!(
         output.status.success(),
@@ -361,12 +304,7 @@ fn two_gaps_on_one_wire_report_the_same_impedance_at_both() {
         .and_then(|p| p.parent())
         .expect("workspace root")
         .to_path_buf();
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock")
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!("fnec-fnd120-{}-{nanos}", std::process::id()));
-    fs::create_dir_all(&dir).expect("scratch dir");
+    let dir = common::TempDir::new("fnd120");
     let deck = dir.join("two-gaps.nec");
     fs::write(
         &deck,
@@ -377,7 +315,6 @@ fn two_gaps_on_one_wire_report_the_same_impedance_at_both() {
     .expect("write deck");
 
     let out = run_fnec_output(&deck, &root, &[]);
-    let _ = fs::remove_dir_all(&dir);
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         out.status.success(),

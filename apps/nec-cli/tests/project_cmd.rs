@@ -22,19 +22,16 @@ fn fnec(args: &[&str]) -> std::process::Output {
         .expect("run fnec")
 }
 
-fn tmp(name: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("fnec_project_{}_{}", std::process::id(), name))
-}
-
 /// The round trip is the property GAP-015 asks for, through the CLI rather than
 /// the library: a project that goes out as Markdown and back must be the same
 /// project, byte for byte.
 #[test]
 fn a_project_round_trips_through_markdown_via_the_cli() {
-    let src = tmp("in.toml");
-    let md = tmp("mid.md");
-    let back = tmp("out.toml");
-    std::fs::write(&src, PROJECT_TOML).expect("write");
+    let src = common::TempDeck::new("project-in.toml", PROJECT_TOML);
+    // The CLI writes these two; they live in a directory that removes them.
+    let dir = common::TempDir::new("project-round-trip");
+    let md = dir.join("mid.md");
+    let back = dir.join("out.toml");
 
     let out = fnec(&[
         "project",
@@ -69,23 +66,17 @@ fn a_project_round_trips_through_markdown_via_the_cli() {
         PROJECT_TOML,
         "the round trip must return the same project"
     );
-
-    for p in [src, md, back] {
-        let _ = std::fs::remove_file(p);
-    }
 }
 
 /// With no output path the document goes to stdout, so the converter composes
 /// with a pipeline rather than only with a filename.
 #[test]
 fn conversion_without_an_output_path_writes_to_stdout() {
-    let src = tmp("stdout.toml");
-    std::fs::write(&src, PROJECT_TOML).expect("write");
+    let src = common::TempDeck::new("project-stdout.toml", PROJECT_TOML);
     let out = fnec(&["project", "convert", src.to_str().unwrap()]);
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("Test dipole project"), "{stdout}");
-    let _ = std::fs::remove_file(src);
 }
 
 /// A malformed project is refused with the offending file named, and **nothing
@@ -93,10 +84,8 @@ fn conversion_without_an_output_path_writes_to_stdout() {
 /// conversion that cannot be produced does not truncate an existing file.
 #[test]
 fn a_malformed_project_is_refused_without_writing_the_output() {
-    let src = tmp("bad.toml");
-    let dst = tmp("untouched.md");
-    std::fs::write(&src, "version = 1\ndeck_path = \"x.nec\"\n").expect("write");
-    std::fs::write(&dst, "PRE-EXISTING").expect("write");
+    let src = common::TempDeck::new("project-bad.toml", "version = 1\ndeck_path = \"x.nec\"\n");
+    let dst = common::TempDeck::new("project-untouched.md", "PRE-EXISTING");
 
     let out = fnec(&[
         "project",
@@ -118,10 +107,6 @@ fn a_malformed_project_is_refused_without_writing_the_output() {
         "PRE-EXISTING",
         "the destination must not be touched when the conversion fails"
     );
-
-    for p in [src, dst] {
-        let _ = std::fs::remove_file(p);
-    }
 }
 
 #[test]

@@ -13,8 +13,10 @@ its own copy of the rule, and a sentence asking for `TempDeck` cannot see a new
 one. A grep can.
 
 Scanned: every `.rs` file under `apps/nec-cli/tests/`. Exempt: `common/mod.rs`,
-the owner, and the files listed in `scripts/scratch-paths-allowlist.txt` (the 42
-that predate this gate, FND-320). The list may only shrink: an entry whose file
+the owner, and the files listed in `scripts/scratch-paths-allowlist.txt` (42
+predated this gate; all but `temp_deck_contract.rs`, which tests the guard's
+primitive on a known path, moved onto `TempDeck` / `TempDir`, FND-320). The list
+may only shrink: an entry whose file
 no longer calls `temp_dir()`, or no longer exists, is itself an error, so a
 migrated file must leave the list in the same change. Line comments are
 stripped first, so prose naming `temp_dir()` is not a call.

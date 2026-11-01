@@ -13,7 +13,6 @@
 
 mod common;
 
-use std::path::PathBuf;
 use std::process::Command;
 
 fn dipole(n: usize, points: usize) -> String {
@@ -21,10 +20,6 @@ fn dipole(n: usize, points: usize) -> String {
         "CE\nGW 1 {n} 0 0 -5.282 0 0 5.282 .001\nGE 0\nEX 0 1 {} 0 1 0\nFR 0 {points} 0 0 14.2 0.1\nEN\n",
         n / 2 + 1
     )
-}
-
-fn scratch(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("fnec-exec-auto-{name}-{}", std::process::id()))
 }
 
 /// Run fnec on `deck` with `args` and the calibration at `calibration` (a path that
@@ -36,8 +31,7 @@ fn run_with(
     args: &[&str],
     calibration: &std::path::Path,
 ) -> (String, String) {
-    let path = scratch(name).with_extension("nec");
-    std::fs::write(&path, deck).expect("write deck");
+    let path = common::TempDeck::new(&format!("exec-auto-{name}.nec"), deck);
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .env("FNEC_EXEC_CALIBRATION", calibration)
         .env("RAYON_NUM_THREADS", "4")
@@ -45,20 +39,15 @@ fn run_with(
         .arg(&path)
         .output()
         .expect("run fnec");
-    let _ = std::fs::remove_file(&path);
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     assert!(out.status.success(), "fnec {args:?} failed:\n{stderr}");
     (String::from_utf8_lossy(&out.stdout).into_owned(), stderr)
 }
 
-/// An uncalibrated run.
+/// An uncalibrated run: its calibration path names a file that does not exist.
 fn run(name: &str, deck: &str, args: &[&str]) -> (String, String) {
-    run_with(
-        name,
-        deck,
-        args,
-        &scratch("no-calibration").with_extension("toml"),
-    )
+    let dir = common::TempDir::new("exec-auto-no-calibration");
+    run_with(name, deck, args, &dir.join("no-calibration.toml"))
 }
 
 /// This host's key as `fnec calibrate --print-key` reports it, or `None` without a
@@ -75,16 +64,14 @@ fn host_key() -> Option<String> {
 
 /// A calibration file for this host (or a foreign one): 550 segments for one point
 /// and for a sweep of 4 threads.
-fn calibration(name: &str, key: Option<&str>) -> PathBuf {
+fn calibration(name: &str, key: Option<&str>) -> common::TempDeck {
     let key = key.map(str::to_string).unwrap_or_else(|| {
         "adapter = \"Another GPU\"\nbackend = \"Vulkan\"\ndevice_type = \"DiscreteGpu\"\ndriver = \"0\"\ncpu = \"Another CPU\"\n".to_string()
     });
     let text = format!(
         "schema = 1\nepoch = 1\none_point_min_segs = 550\nsweep_min_segs = 550\nsweep_threads = 4\nmeasured_up_to = 2000\n\n[key]\n{key}"
     );
-    let p = scratch(name).with_extension("toml");
-    std::fs::write(&p, text).expect("write calibration");
-    p
+    common::TempDeck::new(&format!("exec-auto-{name}.toml"), &text)
 }
 
 fn selected(stderr: &str) -> &str {
@@ -136,9 +123,9 @@ fn an_uncalibrated_host_stays_on_the_cpu_and_says_how_to_calibrate() {
 /// the marker, which a prompt on any host would leave.
 #[test]
 fn a_piped_run_never_offers_and_never_records_a_decline() {
-    let cal = scratch("piped").with_extension("toml");
+    let dir = common::TempDir::new("exec-auto-piped");
+    let cal = dir.join("piped.toml");
     let marker = cal.with_extension("declined");
-    let _ = std::fs::remove_file(&marker);
     let (_, err) = run_with("piped", &dipole(901, 1), &[], &cal);
     assert!(!err.contains("Calibrate now?"), "{err}");
     assert!(
@@ -152,10 +139,8 @@ fn a_piped_run_never_offers_and_never_records_a_decline() {
 /// treated as absent.
 #[test]
 fn an_unreadable_calibration_is_named() {
-    let bad = scratch("bad").with_extension("toml");
-    std::fs::write(&bad, "this is not toml = = =").unwrap();
+    let bad = common::TempDeck::new("exec-auto-bad.toml", "this is not toml = = =");
     let (_, err) = run_with("bad", &dipole(901, 1), &[], &bad);
-    let _ = std::fs::remove_file(&bad);
     assert_eq!(selected(&err), "cpu", "{err}");
     assert!(
         err.contains("could not be read") && err.contains("bad"),
@@ -176,7 +161,6 @@ fn below_the_calibrated_crossover_the_pick_is_the_cpu_to_the_byte() {
         "{auto_err}"
     );
     let (cpu_out, _) = run_with("549cpu", &deck, &["--exec", "cpu"], &cal);
-    let _ = std::fs::remove_file(&cal);
     assert_eq!(auto_out, cpu_out);
 }
 
@@ -188,7 +172,6 @@ fn at_the_calibrated_crossover_the_pick_is_the_gpu_where_there_is_one() {
     let (auto_out, auto_err) = run_with("551", &deck, &[], &cal);
     let (cpu_out, _) = run_with("551cpu", &deck, &["--exec", "cpu"], &cal);
     if key.is_none() {
-        let _ = std::fs::remove_file(&cal);
         assert_eq!(selected(&auto_err), "cpu", "{auto_err}");
         assert!(auto_err.contains("no hardware GPU"), "{auto_err}");
         assert_eq!(auto_out, cpu_out, "no GPU: the CPU's answer to the byte");
@@ -203,7 +186,6 @@ fn at_the_calibrated_crossover_the_pick_is_the_gpu_where_there_is_one() {
         *rerun_out.borrow_mut() = Some(o);
         e
     });
-    let _ = std::fs::remove_file(&cal);
     let auto_out = rerun_out.into_inner().unwrap_or(auto_out);
     let (g, c) = (feed_z(&auto_out), feed_z(&cpu_out));
     assert!(
@@ -217,7 +199,6 @@ fn at_the_calibrated_crossover_the_pick_is_the_gpu_where_there_is_one() {
 fn a_calibration_from_another_host_does_not_apply() {
     let cal = calibration("foreign", None);
     let (_, err) = run_with("foreign", &dipole(901, 1), &[], &cal);
-    let _ = std::fs::remove_file(&cal);
     assert_eq!(selected(&err), "cpu", "{err}");
     if host_key().is_some() {
         assert!(
@@ -244,7 +225,6 @@ fn a_large_deck_the_gpu_does_not_solve_stays_on_the_cpu() {
 fn a_sweep_below_its_crossover_stays_on_the_cpu() {
     let cal = calibration("sweep520", host_key().as_deref());
     let (_, err) = run_with("sweep520", &dipole(520, 2), &[], &cal);
-    let _ = std::fs::remove_file(&cal);
     assert_eq!(selected(&err), "cpu", "{err}");
     assert!(err.contains("crossover for a sweep (550)"), "{err}");
 }
@@ -256,7 +236,6 @@ fn a_sweep_past_its_crossover_runs_on_the_gpu_and_counts_its_points() {
     let key = host_key();
     let cal = calibration("sweep551", key.as_deref());
     let (_, err) = run_with("sweep551", &dipole(551, 2), &[], &cal);
-    let _ = std::fs::remove_file(&cal);
     if key.is_none() {
         assert_eq!(selected(&err), "cpu", "{err}");
         return;
@@ -280,7 +259,6 @@ fn a_sweep_past_its_crossover_runs_on_the_gpu_and_counts_its_points() {
 fn the_small_deck_gpu_warning_quotes_the_calibration_once_per_run() {
     let cal = calibration("small", host_key().as_deref());
     let (_, err) = run_with("small-sweep", &dipole(51, 5), &["--exec", "gpu"], &cal);
-    let _ = std::fs::remove_file(&cal);
     let n = err
         .lines()
         .filter(|l| l.contains("slower than the CPU below 550 segments"))
@@ -314,7 +292,6 @@ fn a_load_that_stamps_zero_does_not_keep_a_deck_on_the_cpu() {
     let zero = "CE\nGW 1 601 0 0 -5.282 0 0 5.282 .001\nGE 0\nLD 4 1 301 301 0 0\nEX 0 1 301 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
     let (_, zero_err) = run_with("zero-ld", zero, &[], &cal);
     let (_, twin_err) = run_with("zero-ld-twin", &dipole(601, 1), &[], &cal);
-    let _ = std::fs::remove_file(&cal);
     for err in [&zero_err, &twin_err] {
         assert!(
             !err.contains("not a deck the GPU solves") && !err.contains("stamps loads"),
