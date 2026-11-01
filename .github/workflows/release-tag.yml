@@ -20,6 +20,13 @@ name: Mint release tag
 # and the machine decides *which commit* carries it, so the tag cannot land on a
 # commit the maintainer merely remembered.
 #
+# The one exception is the `sha` input (FND-322): when merges after the release
+# PR must not ship, the human names the release commit, and every check below
+# runs at it exactly as at the tip. Without it, a release left past
+# check-release-tags.py's MAX_UNTAGGED_AGE_DAYS could not be minted at all — the
+# tip's [Unreleased] blocks the mint, and the age check fails the docs PR that
+# would clear it — and v0.25.0 was tagged by hand for that reason.
+#
 # `contents: write` is scoped to the one job that needs it, following
 # benchmark-dashboard.yml — but deliberately NOT its toolchain idiom. This job
 # installs no toolchain and builds nothing: a job whose token can rewrite release
@@ -31,6 +38,10 @@ on:
     inputs:
       version:
         description: 'Version to tag (e.g. 0.16.0). Defaults to the workspace version on main.'
+        required: false
+        type: string
+      sha:
+        description: 'Commit to tag: a full 40-hex SHA that is an ancestor of main. Default: main''s tip. Use when merges after the release PR must NOT ship in this release (docs/release-process.md step 1).'
         required: false
         type: string
 
@@ -61,49 +72,27 @@ jobs:
           fetch-depth: 0
           ref: main
 
+      # Before anything depends on it: the resolver decides which commit this
+      # token tags, and its refusals are seen failing here first — the same
+      # reason the last step runs test-check-release-tags.py (FND-322). Python
+      # and git only; it adds nothing to this job's third-party surface.
+      - name: The resolver refuses what it should
+        run: python3 scripts/test-mint-resolve.py
+
       - name: Resolve the version and the commit to tag
         id: resolve
+        # Both inputs through env, never `${{ }}` into the shell line: `sha` is
+        # free text from the dispatch form, and mint-resolve.py refuses anything
+        # that is not 40 hex before it reaches git. Tip mode by default; the
+        # rules for both modes, and why the tip is the default, are in the script.
+        # In sha mode the script also writes the commits left out of the tag to
+        # the log and the step summary.
         run: |
           set -euo pipefail
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import os, subprocess, sys, tomllib
-
-          requested = os.environ.get("REQUESTED", "").strip()
-
-          def workspace_version(text):
-              d = tomllib.loads(text)
-              return d.get("workspace", {}).get("package", {}).get("version") \
-                  or d.get("package", {}).get("version")
-
-          head = workspace_version(open("Cargo.toml", encoding="utf-8").read())
-          version = requested or head
-          if version != head:
-              sys.exit(
-                  f"::error::requested {version} but main declares {head}. "
-                  f"Tag the version main is on, or bump main first."
-              )
-
-          # Tag main's tip, not the commit that introduced the version.
-          #
-          # The alternative — resolve the bump commit — was tried and is wrong
-          # here, checkably: for 0.15.0 it picks 2f51d63, the merge of the
-          # release PR, whose tree carries the FND-044 wheel-label defect. The
-          # real v0.15.0 sits at 1354fda, two commits later, because the defect
-          # was found and fixed before tagging. A release that needs a post-bump
-          # fix has a bump commit that is *permanently* the wrong tag target, so
-          # "always tag the bump" could never mint that release at all.
-          #
-          # Tagging the tip is also what a human does: pressing this button means
-          # "main is ready to be this release". What makes it safe is not the
-          # choice of commit but the verification below, which runs at whatever
-          # commit is about to be tagged.
-          sha = subprocess.run(["git", "rev-parse", "HEAD"],
-                               capture_output=True, text=True, check=True).stdout.strip()
-          print(f"version={version}")
-          print(f"sha={sha}")
-          PY
+          python3 scripts/mint-resolve.py >> "$GITHUB_OUTPUT"
         env:
           REQUESTED: ${{ inputs.version }}
+          SHA_INPUT: ${{ inputs.sha }}
 
       - name: Refuse to re-tag
         env:
@@ -141,9 +130,11 @@ jobs:
           grep -qE "^## ${VERSION//./\\.}( |$)" /tmp/mint/docs/releasenotes.md \
             || { echo "::error::no $VERSION section in docs/releasenotes.md"; exit 1; }
 
-          # This tags main's TIP, so anything merged after the release PR is in the
-          # tag, and its entry must have moved under [$VERSION] first (release-process
-          # step 1). Missed at 0.19.0, 0.20.0 and 0.23.0, each fixed after the tag.
+          # In tip mode anything merged after the release PR is in the tag, and its
+          # entry must have moved under [$VERSION] first (release-process step 1).
+          # Missed at 0.19.0, 0.20.0 and 0.23.0, each fixed after the tag. In sha
+          # mode this reads the tagged commit's own [Unreleased], so later merges'
+          # entries — which are not in the tag — do not block it.
           ( cd /tmp/mint && python3 "$GITHUB_WORKSPACE/scripts/check-changelog-unreleased-empty.py" )
 
           # The defect that made this a button rather than a trigger. The script
@@ -200,16 +191,26 @@ jobs:
           heading = re.search(rf"^## \[{re.escape(version)}\]([^\n]*)", text, re.MULTILINE)
           title = (heading.group(1) if heading else "").strip(" —-")
           body = (m.group(1).strip() if m else "")
+          trailer = (f"Tagged by .github/workflows/release-tag.yml from the changelog "
+                     f"section. Fuller prose lives in docs/releasenotes.md.")
+          if os.environ["MODE"] == "sha":
+              # The tag says it was not cut from the tip, and what it leaves out,
+              # so `git show` answers that without the workflow log (FND-322).
+              trailer += (f" Minted at an explicitly requested commit; main's tip at "
+                          f"mint time was {os.environ['TIP']}, {os.environ['BEHIND']} "
+                          f"later commit(s) are not in this release.")
           pathlib.Path("/tmp/tagmsg").write_text(
               f"v{version}{(' — ' + title) if title else ''}\n\n"
               f"{body}\n\n"
-              f"Tagged by .github/workflows/release-tag.yml from the changelog "
-              f"section. Fuller prose lives in docs/releasenotes.md.\n",
+              f"{trailer}\n",
               encoding="utf-8",
           )
           PY
         env:
           VERSION: ${{ steps.resolve.outputs.version }}
+          MODE: ${{ steps.resolve.outputs.mode }}
+          TIP: ${{ steps.resolve.outputs.tip }}
+          BEHIND: ${{ steps.resolve.outputs.behind }}
 
       - name: Mint and push the annotated tag
         env:
