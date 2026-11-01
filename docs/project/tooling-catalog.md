@@ -25,6 +25,7 @@ layer — they generate references, gate contracts, and benchmark performance.
 | `check-asset-platform.py` | Refuse a release asset needing a newer glibc than `docs/project/release-asset-platform.toml`, or a wheel without a manylinux tag; self-test `test-check-asset-platform.py` | Release contract |
 | `host-build-lock.sh` | Take the host-wide heavy-build lock; re-entrant within one process tree (FND-184); refuses in a linked worktree whose cargo target dir lies inside it; refuses a target dir another checkout claimed (FND-279); self-test `test-host-build-lock.sh` | Host safety |
 | `check-changelog-unreleased-empty.py` | Refuse a mint while `docs/changelog.md`'s `[Unreleased]` has any content at the commit being tagged (release-process step 1); self-test `test-check-changelog-unreleased-empty.py` | `release-tag.yml`; self-test in `check-all.sh`, CI |
+| `mint-resolve.py` | Resolve the version and commit the Mint release tag workflow tags: main's tip by default, or the `sha` input (full 40 hex, an ancestor of main, version from its own tree), listing the later commits it leaves out (FND-322); self-test `test-mint-resolve.py` | `release-tag.yml` (self-test is its first step); self-test in `check-all.sh`, CI |
 | `check-hooks-take-lock.py` | Every repo hook under `.githooks/` that runs cargo sources `host-build-lock.sh` first (FND-261) | `check-all.sh`, CI |
 
 ## Benchmark harnesses (`scripts/`)

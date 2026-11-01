@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/release-process.md
 status: living
-last_updated: 2026-10-18
+last_updated: 2026-11-01
 ---
 
 # Cutting a release
@@ -13,22 +13,43 @@ bump, changelog, release notes and SBOM are the release PR's job, and
 
 ## 1. Everything the tag will carry is in the notes
 
-The mint workflow tags **main's tip**, not the release PR's merge commit. Anything
-merged after the release PR ships in the tag, so its changelog entry belongs under
-the release's heading, not `[Unreleased]`. Move it with a docs PR before minting.
-(0.19.0: #482 folded #481 in after the release PR #480; 0.20.0 #510 and 0.23.0 #603
-had to be fixed after the tag.) The mint workflow refuses while `[Unreleased]` has
-any content at the commit it would tag (`check-changelog-unreleased-empty.py`), so a
-merge after the release PR now blocks the mint rather than slipping into it. Any
-number the notes quote as "measured at the release commit" is re-measured at the tip.
+By default the mint workflow tags **main's tip**, not the release PR's merge
+commit, so anything merged after the release PR ships in the tag. The mint refuses
+while `[Unreleased]` has any content at the commit it would tag
+(`check-changelog-unreleased-empty.py`), so a merge after the release PR blocks the
+mint rather than slipping into it. There are two routes:
+
+1. **Fold the later entries in, then mint the tip** — the default. Move each
+   `[Unreleased]` entry under the release's heading with a docs PR, then mint with
+   no `sha`. Any number the notes quote as "measured at the release commit" is
+   re-measured at the tip. (0.19.0: #482 folded #481 in after the release PR #480;
+   0.20.0 #510 and 0.23.0 #603 had to be fixed after the tag.)
+2. **Mint at the release PR's merge commit with `sha=`** — when the later merges
+   must not ship in this release. Every check then runs at that commit, and its own
+   `[Unreleased]` is the one read; the later entries stay under main's
+   `[Unreleased]` for the next release.
+
+Past `MAX_UNTAGGED_AGE_DAYS` (7) only route 2 works: `check-release-tags` fails
+every PR's `docs contract` job, which is required. A docs PR that also raised the
+limit would pass its own CI, because a PR's CI runs the PR's copy of the checker;
+that silences the alarm and is not a route.
 
 ## 2. Mint the tag
 
 Actions → **Mint release tag** → *Run workflow*, version left empty. Or:
-`gh workflow run release-tag.yml`. The workflow refuses to re-tag. It checks the
-changelog and release-notes sections, that `[Unreleased]` is empty, the binding
-version and the SBOM, and it requires green CI at the commit it tags. Never tag
-by hand.
+`gh workflow run release-tag.yml`. For route 2, give the release PR's merge
+commit as a full 40-character SHA:
+`gh workflow run release-tag.yml -f sha=<40-hex merge commit>`. It must be an
+ancestor of main, and the version is the one its tree declares (`version`, if
+given, must match it). The run's summary and log then list the commits on main
+after it that the tag leaves out, and the tag message says it was minted at a
+requested commit, with main's tip and the count of later commits.
+
+The workflow refuses to re-tag. It checks the changelog and release-notes
+sections, that `[Unreleased]` is empty, the binding version and the SBOM, and it
+requires green CI at the commit it tags. Never tag by hand: the v0.25.0 tag was
+placed by hand (FND-322) because neither route existed; the `sha` input is that
+route.
 
 ## 3. Build the assets in the container
 
