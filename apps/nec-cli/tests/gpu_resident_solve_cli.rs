@@ -357,3 +357,23 @@ fn the_record_names_where_the_matrix_was_filled() {
         common::assert_diag_field(&stderr, "solve_exec", "gpu");
     }
 }
+
+/// FND-321: a device lost under the resident solve leaves the default panic
+/// hook's line from inside wgpu's `Device::poll` on stderr, then the fallback
+/// warning. The two together are a transient miss, worth the shared re-run —
+/// not a deterministic decline. A synthetic stderr, since a real loss cannot be
+/// produced on demand.
+#[test]
+fn a_lost_device_s_panic_line_and_fallback_read_as_a_miss() {
+    let stderr = "thread 'main' panicked at wgpu-30.0.1/src/backend/wgpu_core.rs:1924:9:\n\
+                  Error in Device::poll: Validation Error\n\n\
+                  Caused by:\n  Parent device is lost\n\n\
+                  warning: solve_hallen_gpu_resident: the device was lost (wgpu: Error in \
+                  Device::poll: Validation Error Caused by: Parent device is lost) — falling \
+                  back to CPU\n";
+    assert!(
+        matches!(classify_gpu_stderr(stderr), GpuRun::Missed(l) if l.contains("the device was lost")),
+        "{:?}",
+        classify_gpu_stderr(stderr)
+    );
+}
