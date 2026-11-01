@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/sbom.md
 status: living
-last_updated: 2026-10-22
+last_updated: 2026-11-01
 ---
 
 # SBOM
@@ -15,6 +15,13 @@ The **complete** machine-readable SBOM is generated per release and attached to 
 release as `SBOM-v<version>.spdx.json` (SPDX 2.3, `cargo sbom`). It covers the full
 transitive graph — 525 packages at v0.19.0 — where this table covers the ones a reader
 needs to reason about. Both are shipped; neither replaces the other.
+
+**No dependency left or arrived between v0.25.0 and v0.26.0.** Set difference over
+`(name, versionInfo)` pairs: 526 packages before and after; the only entries that moved
+are the nine workspace members' own versions (0.25.0 → 0.26.0). Two edges inside the
+graph moved from development to normal dependencies, so the SBOM gains two `DEPENDS_ON`
+relationships (1545 → 1547): `nec-cli` on `serde_json` 1.0.149 (`fnec match`, #630) and
+`nec_accel` on `nec_model` (the shared physical constants, FND-297 b, #644).
 
 **No dependency left or arrived between v0.24.0 and v0.25.0.** Set difference over
 `(name, versionInfo)` pairs: 526 packages before and after; the only entries that moved
