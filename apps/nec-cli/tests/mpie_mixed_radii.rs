@@ -15,14 +15,11 @@
 //!   value, which carries a tenth of the step's reactance or less (FND-252).
 use std::process::Command;
 
+mod common;
+
 /// `fnec` on `deck` with `args`: Ok((feedpoint Z, stderr)) or Err(stderr).
 fn fnec(deck: &str, args: &[&str]) -> Result<((f64, f64), String), String> {
-    let dir = std::env::temp_dir().join(format!(
-        "fnec-mixed-radii-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let dir = common::TempDir::new("mixed-radii");
     let path = dir.join("deck.nec");
     std::fs::write(&path, deck).expect("write deck");
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -30,7 +27,6 @@ fn fnec(deck: &str, args: &[&str]) -> Result<((f64, f64), String), String> {
         .arg(&path)
         .output()
         .expect("run fnec");
-    let _ = std::fs::remove_dir_all(&dir);
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     if !out.status.success() {
         return Err(stderr);

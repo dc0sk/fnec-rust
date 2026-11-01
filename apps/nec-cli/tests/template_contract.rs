@@ -6,22 +6,13 @@
 // Each test writes a temporary NEC deck template and a temporary vars file,
 // runs the fnec binary with `--vars <path> <deck>`, and validates the output.
 
-use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-fn unique_suffix() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos()
-}
+mod common;
 
-fn write_temp(name: &str, ext: &str, body: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!("fnec-vars-{}-{}.{}", name, unique_suffix(), ext));
-    fs::write(&path, body).expect("failed to write temp file");
-    path
+fn write_temp(name: &str, ext: &str, body: &str) -> common::TempDeck {
+    common::TempDeck::new(&format!("vars-{name}.{ext}"), body)
 }
 
 // ---------------------------------------------------------------------------
@@ -44,9 +35,6 @@ fn vars_toml_substitution_produces_valid_deck() {
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
-    let _ = fs::remove_file(&vars_path);
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     assert!(
@@ -85,9 +73,6 @@ fn vars_json_substitution_produces_valid_deck() {
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec: {e}"));
 
-    let _ = fs::remove_file(&deck_path);
-    let _ = fs::remove_file(&vars_path);
-
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     assert!(
         output.status.success(),
@@ -118,9 +103,6 @@ fn vars_undefined_token_causes_error_exit() {
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec: {e}"));
 
-    let _ = fs::remove_file(&deck_path);
-    let _ = fs::remove_file(&vars_path);
-
     assert!(
         !output.status.success(),
         "fnec should have failed on undefined variable"
@@ -148,8 +130,6 @@ fn plain_deck_without_vars_still_works() {
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
 
     assert!(
         output.status.success(),

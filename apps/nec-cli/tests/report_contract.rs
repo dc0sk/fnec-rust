@@ -1,16 +1,10 @@
-use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-fn write_temp_deck(prefix: &str, body: &str) -> PathBuf {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let path = std::env::temp_dir().join(format!("fnec-{prefix}-{now}.nec"));
-    fs::write(&path, body).expect("failed to write temporary deck");
-    path
+mod common;
+
+fn write_temp_deck(prefix: &str, body: &str) -> common::TempDeck {
+    common::TempDeck::new(&format!("{prefix}.nec"), body)
 }
 
 #[test]
@@ -262,8 +256,6 @@ fn report_contract_keeps_operator_tables_ordered_before_sweep_summary() {
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for sweep/load report contract test: {e}"));
 
-    let _ = fs::remove_file(&deck_path);
-
     assert!(
         output.status.success(),
         "fnec failed: {}",
@@ -354,7 +346,7 @@ fn the_cli_guide_documents_every_report_section_the_binary_emits() {
                 .to_string(),
         ),
     ];
-    let mut inline_paths: Vec<PathBuf> = Vec::new();
+    let mut inline_paths: Vec<common::TempDeck> = Vec::new();
     for (name, body) in &inline {
         inline_paths.push(write_temp_deck(&format!("contract-{name}"), body));
     }
@@ -363,7 +355,7 @@ fn the_cli_guide_documents_every_report_section_the_binary_emits() {
     let all: Vec<PathBuf> = decks
         .iter()
         .map(|d| workspace_root.join(d))
-        .chain(inline_paths.iter().cloned())
+        .chain(inline_paths.iter().map(|p| p.to_path_buf()))
         .collect();
     for deck in &all {
         let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -390,9 +382,7 @@ fn the_cli_guide_documents_every_report_section_the_binary_emits() {
             }
         }
     }
-    for p in &inline_paths {
-        let _ = std::fs::remove_file(p);
-    }
+    drop(inline_paths);
     assert!(
         emitted.len() >= 11 && emitted.iter().any(|e| e == "INPUT_IMPEDANCE"),
         "expected every report section across these decks, found {emitted:?} — \

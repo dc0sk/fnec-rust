@@ -21,6 +21,8 @@
 
 use std::process::Command;
 
+mod common;
+
 /// A subnormal wire radius: positive, so it passes the parse, and the solve's
 /// currents still come out non-finite. A zero radius did the same until FND-236
 /// refused it at the parse, before any solve — which would leave this file
@@ -33,19 +35,13 @@ fn deck(radius: &str, extra: &str) -> String {
 }
 
 fn run(deck_text: &str) -> (bool, String, String) {
-    let dir = std::env::temp_dir().join(format!(
-        "fnec-nonfinite-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let dir = common::TempDir::new("nonfinite");
     let path = dir.join("deck.nec");
     std::fs::write(&path, deck_text).expect("write deck");
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg(&path)
         .output()
         .expect("run fnec");
-    let _ = std::fs::remove_dir_all(&dir);
     (
         out.status.success(),
         String::from_utf8_lossy(&out.stdout).into_owned(),

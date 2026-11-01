@@ -117,6 +117,8 @@ fn remaining_drift(values: &[f64]) -> f64 {
 // How a nec2c mesh series behaves (FND-256): the shared rule.
 use nec_solver::convergence::{classify, Trend as Series};
 
+mod common;
+
 /// The tolerance the corpus gate (`corpus_validation.rs`) holds fnec to against
 /// this reference on `axis` ("R" or "X"): `max(absolute, percent × |reference|)`,
 /// each External figure falling back to the case's own; `None` when the case
@@ -240,8 +242,7 @@ fn the_settle_rule_refuses_a_drifting_series() {
 /// The feedpoint impedances of `deck`, in output order (every source, every
 /// frequency).
 fn fnec_z(deck: &str) -> Vec<(f64, f64)> {
-    let dir = std::env::temp_dir().join(format!("fnec-converged-ref-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let dir = common::TempDir::new("converged-ref");
     static RUN: AtomicUsize = AtomicUsize::new(0);
     let path = dir.join(format!("{}.nec", RUN.fetch_add(1, Ordering::Relaxed)));
     std::fs::write(&path, deck).expect("write deck");
@@ -344,8 +345,7 @@ fn the_remesh_maps_a_segment_to_the_same_point_and_refuses_what_it_cannot() {
     let (ok, _, err) = remesh(&root().join("corpus/dipole-freesp-51seg.nec"), 27);
     assert!(!ok && err.contains("segment/radius"), "{err}");
     // A card it does not map (a GM copy would renumber the segments): refused.
-    let dir = std::env::temp_dir().join(format!("fnec-converged-gm-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = common::TempDir::new("converged-gm");
     let gm = dir.join("gm.nec");
     std::fs::write(
         &gm,
@@ -353,7 +353,6 @@ fn the_remesh_maps_a_segment_to_the_same_point_and_refuses_what_it_cannot() {
     )
     .unwrap();
     let (ok, _, err) = remesh(&gm, 3);
-    let _ = std::fs::remove_dir_all(&dir);
     assert!(!ok && err.contains("'GM' is not mapped"), "{err}");
 }
 

@@ -13,10 +13,10 @@
 // (FND-251): the per-wire fallback it used to warn and solve on was 2 to 18 times
 // off nec2c.
 
-use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+
+mod common;
 
 fn run(deck: &str, name: &str) -> (String, String, std::process::ExitStatus) {
     run_on(deck, name, "hallen")
@@ -24,19 +24,13 @@ fn run(deck: &str, name: &str) -> (String, String, std::process::ExitStatus) {
 
 fn run_on(deck: &str, name: &str, solver: &str) -> (String, String, std::process::ExitStatus) {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let path = std::env::temp_dir().join(format!("fnec-{name}-{solver}-{now}.nec"));
-    fs::write(&path, deck).unwrap();
+    let path = common::TempDeck::new(&format!("{name}-{solver}.nec"), deck);
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .args(["--solver", solver, "--exec", "cpu"])
         .arg(&path)
         .current_dir(&root)
         .output()
         .unwrap();
-    let _ = fs::remove_file(&path);
     (
         String::from_utf8_lossy(&out.stdout).into_owned(),
         String::from_utf8_lossy(&out.stderr).into_owned(),
@@ -315,14 +309,12 @@ EN
 ";
 
 fn stderr_for(deck: &str, name: &str) -> String {
-    let path = std::env::temp_dir().join(format!("fnec-negr-{name}.nec"));
-    std::fs::write(&path, deck).expect("write deck");
+    let path = common::TempDeck::new(&format!("negr-{name}.nec"), deck);
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_fnec"))
         .args(["--solver", "hallen"])
         .arg(&path)
         .output()
         .expect("run fnec");
-    let _ = std::fs::remove_file(&path);
     String::from_utf8_lossy(&out.stderr).into_owned()
 }
 

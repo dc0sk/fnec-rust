@@ -11,16 +11,11 @@
 //! segments in chain order (`nec_solver::SegmentOrder`) and restores the currents.
 
 use std::process::Command;
-use std::sync::atomic::{AtomicUsize, Ordering};
+
+mod common;
 
 fn run(solver: &str, deck_text: &str) -> (bool, String, String) {
-    static RUN: AtomicUsize = AtomicUsize::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "fnec-sin-chain-order-{}-{}",
-        std::process::id(),
-        RUN.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let dir = common::TempDir::new("sin-chain-order");
     let path = dir.join("deck.nec");
     std::fs::write(&path, deck_text).expect("write deck");
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -28,7 +23,6 @@ fn run(solver: &str, deck_text: &str) -> (bool, String, String) {
         .arg(&path)
         .output()
         .expect("run fnec");
-    let _ = std::fs::remove_dir_all(&dir);
     (
         out.status.success(),
         String::from_utf8_lossy(&out.stdout).into_owned(),

@@ -9,22 +9,12 @@
 //   - block ordering is stable (ascending frequency),
 //   - output is machine-parseable.
 
-use std::fs;
-use std::path::PathBuf;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-fn unique_suffix() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos()
-}
+mod common;
 
-fn write_temp(name: &str, body: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!("fnec-sweep-{}-{}.tmp", name, unique_suffix()));
-    fs::write(&path, body).expect("failed to write temp file");
-    path
+fn write_temp(name: &str, body: &str) -> common::TempDeck {
+    common::TempDeck::new(&format!("sweep-{name}.tmp"), body)
 }
 
 /// Minimal NEC deck with a single half-wave dipole.  The FR card is a single
@@ -69,9 +59,6 @@ fn sweep_single_explicit_point_produces_one_block() {
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec: {e}"));
 
-    let _ = fs::remove_file(&deck_path);
-    let _ = fs::remove_file(&sweep_path);
-
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     assert!(
         output.status.success(),
@@ -111,9 +98,6 @@ fn sweep_explicit_list_produces_block_per_point() {
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
-    let _ = fs::remove_file(&sweep_path);
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     assert!(
@@ -158,9 +142,6 @@ fn sweep_range_produces_correct_point_count() {
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec: {e}"));
 
-    let _ = fs::remove_file(&deck_path);
-    let _ = fs::remove_file(&sweep_path);
-
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     assert!(
         output.status.success(),
@@ -194,9 +175,6 @@ fn sweep_output_block_ordering_is_stable() {
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
-    let _ = fs::remove_file(&sweep_path);
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     assert!(
@@ -239,9 +217,6 @@ fn sweep_output_is_machine_parseable() {
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
-    let _ = fs::remove_file(&sweep_path);
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     assert!(
@@ -378,7 +353,6 @@ fn a_sweep_reports_negative_resistance_once() {
             .arg(&deck)
             .output()
             .expect("run fnec");
-        let _ = std::fs::remove_file(&deck);
         String::from_utf8_lossy(&out.stderr).into_owned()
     };
 

@@ -5,26 +5,20 @@
 // FND-298: the request is XNDA's N (hundreds) digit, as nec2c splits XNDA; the
 // thousands digit X only picks nec2c's column labels.
 
-use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+
+mod common;
 
 fn run(deck: &str, name: &str) -> String {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let path = std::env::temp_dir().join(format!("fnec-{name}-{now}.nec"));
-    fs::write(&path, deck).unwrap();
+    let path = common::TempDeck::new(&format!("{name}.nec"), deck);
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .args(["--solver", "hallen", "--exec", "cpu"])
         .arg(&path)
         .current_dir(&root)
         .output()
         .unwrap();
-    let _ = fs::remove_file(&path);
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 

@@ -21,6 +21,8 @@
 //! exact answer (`SAME_TOL`).
 use std::process::Command;
 
+mod common;
+
 /// The near-miss moves one end by under 1e-3 of a segment's length, so its
 /// answer differs from the exact deck's by about 1e-5 (measured 0.9e-5 at 50 µm).
 const SAME_TOL: f64 = 1e-4;
@@ -30,12 +32,7 @@ const JOINED_TOL: f64 = 0.04;
 
 /// `fnec --solver <solver>` on `deck`: Ok(feedpoint Z) or Err(stderr).
 fn fnec(solver: &str, deck: &str) -> Result<(f64, f64), String> {
-    let dir = std::env::temp_dir().join(format!(
-        "fnec-junction-band-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let dir = common::TempDir::new("junction-band");
     let path = dir.join("deck.nec");
     std::fs::write(&path, deck).expect("write deck");
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -43,7 +40,6 @@ fn fnec(solver: &str, deck: &str) -> Result<(f64, f64), String> {
         .arg(&path)
         .output()
         .expect("run fnec");
-    let _ = std::fs::remove_dir_all(&dir);
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).into_owned());
     }

@@ -1,22 +1,14 @@
-use std::fs;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 mod common;
 
 #[test]
 // VERIFIES: FR-009 (early geometry diagnostics with actionable messages)
 fn crossing_wires_fail_fast_with_actionable_error() {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-geometry-crossing-{now}.nec"));
-
     // Two wires crossing at interior points (origin) are currently unsupported
     // and should fail before solve with an actionable geometry error.
     let deck = "GW 1 11 -1.0 0.0 0.0 1.0 0.0 0.0 0.001\nGW 2 11 0.0 -1.0 0.0 0.0 1.0 0.0 0.001\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write temporary crossing-wires deck");
+    let deck_path = common::TempDeck::new("geometry-crossing.nec", deck);
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
@@ -25,8 +17,6 @@ fn crossing_wires_fail_fast_with_actionable_error() {
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for crossing-wires test: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
 
     assert!(
         !output.status.success(),
@@ -43,19 +33,13 @@ fn crossing_wires_fail_fast_with_actionable_error() {
 
 #[test]
 fn endpoint_wire_junction_is_not_rejected_as_intersection() {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-geometry-endpoint-{now}.nec"));
-
     // Endpoint junction (shared wire endpoint) is allowed by current geometry
     // diagnostics (not an intersecting-wire error). However, since the two
     // wires are non-collinear and --allow-noncollinear-hallen is silently
     // ignored in Phase-1, the Hallen solver will still reject this geometry
     // with a non-collinear topology error.
     let deck = "GW 1 11 0.0 0.0 0.0 1.0 0.0 0.0 0.001\nGW 2 11 0.0 0.0 0.0 0.0 1.0 0.0 0.001\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write temporary endpoint-junction deck");
+    let deck_path = common::TempDeck::new("geometry-endpoint.nec", deck);
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
@@ -64,8 +48,6 @@ fn endpoint_wire_junction_is_not_rejected_as_intersection() {
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for endpoint-junction test: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     // The geometry-diagnostics intersection check should NOT flag this as an
@@ -84,17 +66,11 @@ fn endpoint_wire_junction_is_not_rejected_as_intersection() {
 
 #[test]
 fn tiny_source_segment_fails_fast_with_actionable_error() {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-geometry-tiny-source-{now}.nec"));
-
     // Very short source segment (length/radius < 2) is currently deferred and
     // should fail early with an actionable source-risk geometry diagnostic.
     let deck =
         "GW 1 1 0.0 0.0 0.0 0.000001 0.0 0.0 0.001\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write temporary tiny-source deck");
+    let deck_path = common::TempDeck::new("geometry-tiny-source.nec", deck);
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
@@ -102,8 +78,6 @@ fn tiny_source_segment_fails_fast_with_actionable_error() {
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for tiny-source test: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
 
     assert!(
         !output.status.success(),
@@ -158,8 +132,7 @@ fn a_deck_driven_by_two_kinds_of_source_is_refused() {
 /// that; it gates membership of the chain, which is the new thing.
 #[test]
 fn an_oversized_grid_card_is_refused() {
-    let dir = std::env::temp_dir().join(format!("fnec-grid-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let dir = common::TempDir::new("grid");
     let deck = dir.join("huge-rp.nec");
     std::fs::write(
         &deck,
@@ -172,7 +145,6 @@ fn an_oversized_grid_card_is_refused() {
         .arg(&deck)
         .output()
         .expect("run fnec");
-    let _ = std::fs::remove_dir_all(&dir);
 
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(
@@ -708,13 +680,8 @@ fn the_cli_refuses_a_non_finite_field() {
 /// the dipole with a 0.86 m extension — reads 203.8 + j383.2 in nec2c).
 #[test]
 fn a_wire_laid_along_another_is_refused_by_name() {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-geometry-overlap-{now}.nec"));
     let deck = "CE\nGW 1 11 0 0 -2.64 0 0 2.64 .001\nGW 2 6 0 0 0 0 0 3.5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n";
-    fs::write(&deck_path, deck).expect("write overlap deck");
+    let deck_path = common::TempDeck::new("geometry-overlap.nec", deck);
     for solver in ["hallen", "mpie"] {
         let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
             .args(["--solver", solver])
@@ -735,5 +702,4 @@ fn a_wire_laid_along_another_is_refused_by_name() {
             "{solver}: {stderr}"
         );
     }
-    let _ = fs::remove_file(&deck_path);
 }

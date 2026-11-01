@@ -12,16 +12,14 @@
 
 use std::process::Command;
 
+mod common;
+
 /// A 51-segment dipole swept over four frequencies: about 0.29 MB per point.
 const SWEEP: &str = "CE\nGW 1 51 0 0 -5.282 0 0 5.282 .001\nGE 0\nEX 0 1 26 0 1 0\n\
                      FR 0 4 0 0 14.0 0.1\nEN\n";
 
 fn run(budget_mb: &str) -> (String, String) {
-    let path = std::env::temp_dir().join(format!(
-        "fnec-sweep-budget-{}-{budget_mb}.nec",
-        std::process::id()
-    ));
-    std::fs::write(&path, SWEEP).expect("write deck");
+    let path = common::TempDeck::new(&format!("sweep-budget-{budget_mb}.nec"), SWEEP);
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .args(["--exec", "cpu"])
         .arg(&path)
@@ -29,7 +27,6 @@ fn run(budget_mb: &str) -> (String, String) {
         .env("FNEC_SWEEP_MEMORY_BUDGET_MB", budget_mb)
         .output()
         .expect("run fnec");
-    let _ = std::fs::remove_file(&path);
     assert!(
         out.status.success(),
         "{}",

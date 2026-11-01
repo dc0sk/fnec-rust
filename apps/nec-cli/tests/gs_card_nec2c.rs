@@ -15,14 +15,11 @@
 //! Hallén dipole's (3.4 % here), not this card's.
 use std::process::Command;
 
+mod common;
+
 /// `fnec --solver hallen` on `deck`: Ok(feedpoint Z) or Err(stderr).
 fn fnec(deck: &str) -> Result<(f64, f64), String> {
-    let dir = std::env::temp_dir().join(format!(
-        "fnec-gs-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let dir = common::TempDir::new("gs");
     let path = dir.join("deck.nec");
     std::fs::write(&path, deck).expect("write deck");
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -30,7 +27,6 @@ fn fnec(deck: &str) -> Result<(f64, f64), String> {
         .arg(&path)
         .output()
         .expect("run fnec");
-    let _ = std::fs::remove_dir_all(&dir);
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).into_owned());
     }

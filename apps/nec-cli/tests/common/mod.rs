@@ -170,6 +170,77 @@ impl Drop for TempDeck {
     }
 }
 
+/// A scratch directory in the system temp directory that removes itself and
+/// everything in it when the test ends, including when the test panics — the
+/// directory sibling of [`TempDeck`], for tests that write several files, hand
+/// the CLI a sandbox, or need a path the CLI itself creates (FND-320).
+///
+/// The same uniqueness rule as `TempDeck`, sharing its counter: the path is
+/// `fnec-t{pid}-{n}-{dir_name}`, and it never adopts an existing directory.
+pub struct TempDir {
+    path: std::path::PathBuf,
+}
+
+impl TempDir {
+    /// Create a fresh, empty directory in the temp directory whose name ends
+    /// in `dir_name`, a bare name.
+    pub fn new(dir_name: &str) -> Self {
+        assert!(
+            std::path::Path::new(dir_name).components().count() == 1,
+            "TempDir dir_name must be a bare name, got {dir_name:?}"
+        );
+        let n = TEMP_DECK_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path =
+            std::env::temp_dir().join(format!("fnec-t{}-{n}-{dir_name}", std::process::id()));
+        Self::try_at(path.clone()).unwrap_or_else(|e| {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                panic!(
+                    "scratch directory already exists: {} — a killed test run left it (same pid \
+                     recycled); delete it",
+                    path.display()
+                )
+            }
+            panic!("failed to create temp dir {}: {e}", path.display())
+        })
+    }
+
+    /// The primitive: create the directory `path`, refusing one that exists.
+    /// Callers use [`TempDir::new`].
+    pub fn try_at(path: std::path::PathBuf) -> std::io::Result<Self> {
+        std::fs::create_dir(&path)?;
+        Ok(Self { path })
+    }
+
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+}
+
+impl std::ops::Deref for TempDir {
+    type Target = std::path::Path;
+    fn deref(&self) -> &Self::Target {
+        &self.path
+    }
+}
+
+impl AsRef<std::path::Path> for TempDir {
+    fn as_ref(&self) -> &std::path::Path {
+        &self.path
+    }
+}
+
+impl AsRef<std::ffi::OsStr> for TempDir {
+    fn as_ref(&self) -> &std::ffi::OsStr {
+        self.path.as_os_str()
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
 /// Assert the `exec` label of an `--exec gpu` run of a deck the device solves:
 /// `gpu` where a hardware adapter is present, `gpu(cpu-fallback)` where none is.
 /// What an `--exec gpu` run's stderr says the device did: the one reading of

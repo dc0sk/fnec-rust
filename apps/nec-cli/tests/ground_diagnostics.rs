@@ -1,21 +1,15 @@
-use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+
+mod common;
 
 #[test]
 fn gn0_is_active_without_deferred_warning() {
     // GN0 is active and should not emit deferred/unknown warnings.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-gn0-{now}.nec"));
-
     let deck =
         "GW 1 51 0 0 4.718 0 0 15.282 0.001\nGN 0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write temporary GN deck");
+    let deck_path = common::TempDeck::new("gn0.nec", deck);
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
@@ -24,8 +18,6 @@ fn gn0_is_active_without_deferred_warning() {
         .current_dir(&workspace_root)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for GN diagnostics test: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
 
     assert!(
         output.status.success(),
@@ -69,15 +61,9 @@ fn ge1_with_gn1_solves_over_the_pec_ground() {
     // card as one, where nec2c solves free space; that deck is now refused
     // (tests/ground_flags_nec2c.rs), so this one says GN 1.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-ge1-pec-{now}.nec"));
-
     let deck =
         "GW 1 51 0 0 4.718 0 0 15.282 0.001\nGE 1\nGN 1\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write temporary GE1 deck");
+    let deck_path = common::TempDeck::new("ge1-pec.nec", deck);
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
@@ -86,8 +72,6 @@ fn ge1_with_gn1_solves_over_the_pec_ground() {
         .current_dir(&workspace_root)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for GE1 PEC inference test: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
 
     assert!(
         output.status.success(),
@@ -147,15 +131,9 @@ fn gn_type2_runs_without_deferred_warning_and_changes_impedance() {
     // GN type 2 is mapped to the simple finite-ground path and must not use
     // the deferred-ground warning.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-gn2-{now}.nec"));
-
     let deck =
         "GW 1 51 0 0 4.718 0 0 15.282 0.001\nGE\nGN 2 0 0 0 13.0 0.005\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write temporary GN-2 deck");
+    let deck_path = common::TempDeck::new("gn2.nec", deck);
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
@@ -164,8 +142,6 @@ fn gn_type2_runs_without_deferred_warning_and_changes_impedance() {
         .current_dir(&workspace_root)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for GN type 2 diagnostics test: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
 
     assert!(
         output.status.success(),
@@ -206,15 +182,9 @@ fn gn_type2_medium_params_run_without_deferred_warning() {
     // Phase-1: GN is not parsed; the old "GN type 2 is not yet supported"
     // deferred-ground warning must NOT appear, even with medium parameters.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-gn2-params-{now}.nec"));
-
     let deck =
         "GW 1 51 0 0 4.718 0 0 15.282 0.001\nGE\nGN 2 0 0 0 13.0 0.005\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write temporary GN-2 params deck");
+    let deck_path = common::TempDeck::new("gn2-params.nec", deck);
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
@@ -223,8 +193,6 @@ fn gn_type2_medium_params_run_without_deferred_warning() {
         .current_dir(&workspace_root)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for GN medium params test: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
 
     assert!(
         output.status.success(),
@@ -245,15 +213,9 @@ fn gn_negative1_null_ground_is_silent_free_space() {
     // only GN card the solver must treat it as free-space WITHOUT emitting the
     // deferred-ground warning.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-gn-neg1-{now}.nec"));
-
     let deck =
         "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGN -1\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write temporary GN -1 deck");
+    let deck_path = common::TempDeck::new("gn-neg1.nec", deck);
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
@@ -262,8 +224,6 @@ fn gn_negative1_null_ground_is_silent_free_space() {
         .current_dir(&workspace_root)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for GN -1 test: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
 
     assert!(
         output.status.success(),
@@ -301,15 +261,9 @@ fn gn_negative1_null_ground_is_silent_free_space() {
 fn buried_wire_with_active_ground_fails_fast_with_actionable_error() {
     // Buried wire with active ground must fail fast with actionable diagnostics.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-gn2-buried-{now}.nec"));
-
     let deck =
         "GW 1 51 0 0 -15.282 0 0 -4.718 0.001\nGE\nGN 2 0 0 0 13.0 0.005\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write temporary buried-wire deck");
+    let deck_path = common::TempDeck::new("gn2-buried.nec", deck);
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
@@ -318,8 +272,6 @@ fn buried_wire_with_active_ground_fails_fast_with_actionable_error() {
         .current_dir(&workspace_root)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for buried-wire guardrail test: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
 
     assert!(
         !output.status.success(),
@@ -339,17 +291,11 @@ fn interface_touching_wire_with_active_ground_fails_fast_with_material_context()
     // The scoped finite-ground path only supports strictly above-ground wires.
     // Touching the z=0 interface must fail fast with active-medium context.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-gn2-interface-{now}.nec"));
-
     let deck =
         "GW 1 51 0 0 0.0 0 0 10.564 0.001\nGE 1\nGN 2 0 0 0 13.0 0.005\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     // `GE 1`: with `GE 0` the deck is refused earlier, for leaving the base
     // unjoined (FND-242), before the finite-ground contact refusal it tests here.
-    fs::write(&deck_path, deck).expect("failed to write temporary interface-touching deck");
+    let deck_path = common::TempDeck::new("gn2-interface.nec", deck);
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
@@ -358,8 +304,6 @@ fn interface_touching_wire_with_active_ground_fails_fast_with_material_context()
         .current_dir(&workspace_root)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for interface-touch guardrail test: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
 
     assert!(
         !output.status.success(),
@@ -386,15 +330,9 @@ fn interface_touching_wire_with_active_ground_fails_fast_with_material_context()
 fn near_ground_wire_with_active_ground_runs_without_deferred_warning() {
     // Near-ground wire with GN2 is a supported active-ground path.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-gn2-near-ground-{now}.nec"));
-
     let deck =
         "GW 1 51 0 0 0.5 0 0 11.064 0.001\nGE\nGN 2 0 0 0 13.0 0.005\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write temporary near-ground deck");
+    let deck_path = common::TempDeck::new("gn2-near-ground.nec", deck);
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
@@ -403,8 +341,6 @@ fn near_ground_wire_with_active_ground_runs_without_deferred_warning() {
         .current_dir(&workspace_root)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for near-ground GN2 test: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
 
     assert!(
         output.status.success(),
@@ -453,12 +389,7 @@ fn near_ground_wire_with_active_ground_runs_without_deferred_warning() {
 // modelled), so fnec warns; higher antennas and free space stay quiet.
 fn run_deck(deck: &str, name: &str) -> String {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-{name}-{now}.nec"));
-    fs::write(&deck_path, deck).expect("write temp deck");
+    let deck_path = common::TempDeck::new(&format!("{name}.nec"), deck);
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
         .arg("hallen")
@@ -466,7 +397,6 @@ fn run_deck(deck: &str, name: &str) -> String {
         .current_dir(&workspace_root)
         .output()
         .unwrap_or_else(|e| panic!("failed to run fnec: {e}"));
-    let _ = fs::remove_file(&deck_path);
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
@@ -507,18 +437,12 @@ fn low_dipole_free_space_is_quiet() {
 
 /// A deck through the CLI: (exit success, stderr).
 fn run_cli(name: &str, args: &[&str], deck: &str) -> (bool, String, String) {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let path = std::env::temp_dir().join(format!("fnec-{name}-{now}.nec"));
-    fs::write(&path, deck).expect("write deck");
+    let path = common::TempDeck::new(&format!("{name}.nec"), deck);
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .args(args)
         .arg(&path)
         .output()
         .expect("run fnec");
-    let _ = fs::remove_file(&path);
     (
         out.status.success(),
         String::from_utf8_lossy(&out.stdout).into_owned(),
