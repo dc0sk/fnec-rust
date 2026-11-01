@@ -14,6 +14,15 @@ not a citation of the fix (FND-310's row passed on its measurement base). So the
 phrasing cases below end in `; #1.`, to test the ancestry rule on its own, and
 the rows that owe a PR and carry only a data-shaped hash must fail.
 
+Rule A (FND-323) asks a row that turns `fixed` against a base to name its fixing
+PR (`fixed in #N`). The scratch repo's root commit therefore commits a ledger
+whose FND-001 is already `fixed` with no such phrase, and every `check()` passes
+`--base` at it: FND-001 is grandfathered, so the ancestry cases still test the
+ancestry rule alone (one mechanism per case). Rule A's own cases use `check2()`,
+which puts a new FND-002 above FND-001 or flips FND-001 from a base where it is
+`open`; rule B (the placeholder ban) and `--pr` (narrow C) have their own cases,
+and the default base -- `merge-base HEAD origin/main` -- is proven once.
+
 Run: python3 scripts/test-check-findings-ledger.py
 """
 
@@ -38,21 +47,33 @@ ran = 0
 
 
 def git(cwd: Path, *args: str) -> str:
-    r = subprocess.run(["git", *args], cwd=cwd, env=ENV, capture_output=True, text=True, check=True)
+    r = subprocess.run(["git", *args], cwd=cwd, env=ENV, capture_output=True, text=True,
+                       check=True, stdin=subprocess.DEVNULL)
     return r.stdout.strip()
+
+
+HEADER = (
+    "| ID | Found | State | Finding | Evidence / owner |\n"
+    "|:---|:------|:------|:--------|:-----------------|\n"
+)
+# The grandfathered baseline: fixed, citing a PR, with no `fixed in #N` phrase.
+BASELINE = HEADER + "| FND-001 | 2026-01-01 | fixed | a finding | #1 |\n"
+BASE = ""  # the root commit, which carries BASELINE; set below
+
+
+def run_checker(cwd: Path, *extra: str) -> int:
+    r = subprocess.run(
+        [sys.executable, str(CHECKER), "--ledger", "ledger.md", *extra],
+        cwd=cwd, env=ENV, capture_output=True, text=True,
+    )
+    return r.returncode
 
 
 def check(cwd: Path, evidence: str) -> int:
     (cwd / "ledger.md").write_text(
-        "| ID | Found | State | Finding | Evidence / owner |\n"
-        "|:---|:------|:------|:--------|:-----------------|\n"
-        f"| FND-001 | 2026-01-01 | fixed | a finding | {evidence} |\n"
+        HEADER + f"| FND-001 | 2026-01-01 | fixed | a finding | {evidence} |\n"
     )
-    r = subprocess.run(
-        [sys.executable, str(CHECKER), "--ledger", "ledger.md"],
-        cwd=cwd, env=ENV, capture_output=True, text=True,
-    )
-    return r.returncode
+    return run_checker(cwd, "--base", BASE)
 
 
 def expect(name: str, cwd: Path, evidence: str, want: int) -> None:
@@ -63,11 +84,45 @@ def expect(name: str, cwd: Path, evidence: str, want: int) -> None:
         failures.append(f"{name}: exit {got}, want {want} -- evidence {evidence!r}")
 
 
+def check2(cwd: Path, rows: str, *extra: str) -> int:
+    """A ledger of the given rows (newest first) against `extra`'s base."""
+    (cwd / "ledger.md").write_text(HEADER + rows)
+    return run_checker(cwd, *extra)
+
+
+def expect2(name: str, cwd: Path, rows: str, want: int, *extra: str) -> None:
+    global ran
+    ran += 1
+    got = check2(cwd, rows, *extra)
+    if got != want:
+        failures.append(f"{name}: exit {got}, want {want} -- rows {rows!r} {extra}")
+
+
+def commit_tree(cwd: Path, ledger: str | None) -> str:
+    """A parentless commit holding `ledger` as ledger.md (or nothing), HEAD untouched."""
+    if ledger is None:
+        tree = git(cwd, "mktree")  # stdin is empty: the empty tree
+    else:
+        blob = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=cwd, env=ENV,
+                              input=ledger, capture_output=True, text=True, check=True)
+        tree = subprocess.run(["git", "mktree"], cwd=cwd, env=ENV, capture_output=True,
+                              text=True, check=True,
+                              input=f"100644 blob {blob.stdout.strip()}\tledger.md\n").stdout.strip()
+    return git(cwd, "commit-tree", tree, "-m", "a base")
+
+
+def row(fid: str, state: str, evidence: str) -> str:
+    return f"| {fid} | 2026-01-01 | {state} | a finding | {evidence} |\n"
+
+
 with tempfile.TemporaryDirectory() as d:
     repo = Path(d) / "repo"
     repo.mkdir()
     git(repo, "init", "-q", "-b", "main")
-    git(repo, "commit", "-q", "--allow-empty", "-m", "base")
+    (repo / "ledger.md").write_text(BASELINE)
+    git(repo, "add", "ledger.md")
+    git(repo, "commit", "-q", "-m", "base")
+    BASE = git(repo, "rev-parse", "HEAD")
     git(repo, "commit", "-q", "--allow-empty", "-m", "on main")
     on_main = git(repo, "rev-parse", "--short=7", "HEAD")
     # A branch commit that is then left behind, as a squash-merge leaves it.
@@ -123,6 +178,63 @@ with tempfile.TemporaryDirectory() as d:
     expect("pass: prose list", repo, f"says NONE of {dead}, {off_main} or {dead} is reachable; #1.", 0)
     expect("pass: ed25519 / sizes / floats", repo,
            "SSH ed25519; allocation of 2147483648 bytes; was 8.854187817e-12; #1.", 0)
+
+    # Rule A: a row that turns fixed names its fixing PR (FND-323).
+    g = row("FND-001", "fixed", "#1")  # the grandfathered row, as at BASE
+    b = ("--base", BASE)
+    expect2("A fail: new fixed row cites only an unrelated #N", repo,
+            row("FND-002", "fixed", "Builds on #656; done.") + g, 1, *b)
+    for ev in ("**FIXED in #657 (this PR).** done", "Fixed by PR #657", "fixed in pr #657"):
+        expect2(f"A pass: new fixed row, {ev!r}", repo, row("FND-002", "fixed", ev) + g, 0, *b)
+    expect2("A fail: the phrase in the Finding column, not the evidence", repo,
+            "| FND-002 | 2026-01-01 | fixed | fixed in #657 | Builds on #656. |\n" + g, 1, *b)
+    base_open = commit_tree(repo, HEADER + row("FND-001", "open", "Builds on #656."))
+    expect2("A fail: open -> fixed with no phrase (the FND-320 shape)", repo,
+            row("FND-001", "fixed", "Builds on #656; done."), 1, "--base", base_open)
+    expect2("A pass: open -> fixed with the phrase", repo,
+            row("FND-001", "fixed", "Builds on #656. **FIXED in #657 (this PR).**"), 0,
+            "--base", base_open)
+    expect2("A pass: grandfathered row unchanged", repo, g, 0, *b)
+    # Grandfathering is by state at the base, not by text: an edited row that
+    # was already fixed is not re-judged.
+    expect2("A pass: grandfathered row edited, still no phrase", repo,
+            row("FND-001", "fixed", "Builds on #656, reworded."), 0, *b)
+    no_ledger = commit_tree(repo, None)
+    expect2("A fail: no ledger at the base, fixed row without the phrase", repo,
+            g, 1, "--base", no_ledger)
+    expect2("A pass: no ledger at the base, fixed row with the phrase", repo,
+            row("FND-001", "fixed", "Fixed in #1."), 0, "--base", no_ledger)
+    expect2("exit 2: --base that is not a commit", repo, g, 2, "--base", "no-such-ref")
+
+    # Rule B: a placeholder PR number, any state, outside backticks.
+    expect("B fail: #PRNUM in a grandfathered row", repo, "Fixed in #PRNUM (this PR); #1.", 1)
+    expect("B fail: #TBD", repo, "Fixed in #TBD; #1.", 1)
+    expect("B fail: #?", repo, "Fixed in #? ; #1.", 1)
+    expect("B fail: #N in prose", repo, "cite it as #N; #1.", 1)
+    expect("B pass: `#N` in backticks (the FND-317 / FND-134 shape)", repo,
+           "the form `FIXED in #N` and `#NNN`; #1.", 0)
+    expect2("B fail: #PRNUM in an open row", repo,
+            row("FND-002", "open", "FIXED in #PRNUM later") + g, 1, *b)
+
+    # Narrow C: with --pr, the cited number is this PR's or a merged one's.
+    git(repo, "commit", "-q", "--allow-empty", "-m", "fix: a thing (#42)")
+    git(repo, "commit", "-q", "--allow-empty", "-m", "Merge pull request #43 from x/y")
+    for n, want, why in ((657, 0, "this PR"), (42, 0, "a squash subject"),
+                         (43, 0, "a merge subject"), (999, 1, "neither")):
+        expect2(f"C {'pass' if want == 0 else 'fail'}: --pr 657, cites #{n} ({why})", repo,
+                row("FND-002", "fixed", f"**FIXED in #{n} (this PR).**") + g, want,
+                *b, "--pr", "657")
+    expect2("C pass: cites #999 without --pr (the local lane does not decide it)", repo,
+            row("FND-002", "fixed", "**FIXED in #999 (this PR).**") + g, 0, *b)
+    expect2("exit 2: --pr not a number", repo, g, 2, *b, "--pr", "PRNUM")
+
+    # The default base, merge-base HEAD origin/main: every lane's path.
+    expect2("exit 2: no --base and no origin/main", repo, g, 2)
+    git(repo, "update-ref", "refs/remotes/origin/main", BASE)
+    expect2("default base: grandfathered row passes", repo, g, 0)
+    expect2("default base: new unphrased fixed row fails", repo,
+            row("FND-002", "fixed", "Builds on #656.") + g, 1)
+    git(repo, "update-ref", "-d", "refs/remotes/origin/main")
 
     # Without full history the rule cannot be decided: exit 2, never a green.
     shallow = Path(d) / "shallow"

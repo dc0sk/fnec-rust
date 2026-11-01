@@ -493,6 +493,18 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   `check-all.sh` and CI. A `fixed` row must also cite a PR number: a commit
   hash alone no longer satisfies it, since a hash on `main` can be the base the
   fix was measured on (FND-310's row passed on one).
+- **A ledger row that turns `fixed` must name the PR that fixed it** (FND-323).
+  Any `#N` in a `fixed` row's evidence satisfied the checker, so FND-320's row,
+  citing `#656` (the PR that added the ban) beside a placeholder `FIXED in
+  #PRNUM`, passed `check-all.sh` locally on an uncommitted tree. It was never
+  committed, and no CI run exists for #659. A row whose state turns `fixed`
+  against `merge-base HEAD origin/main` (or `--base REF`; with neither the
+  checker exits 2) now needs `FIXED in #N` in its evidence; the 114 older rows
+  without that phrase are grandfathered by their state at the base. A
+  placeholder (`#PRNUM`, `#TBD`, `#?`) outside backticks is refused on every
+  row, and in PR CI the cited number must be the PR's own or a merged one's,
+  so a predicted number that another PR took fails. The same class as FND-134
+  and FND-317, a third time.
 
 ## [0.25.0] — 2026-10-22 — Where wires meet
 
