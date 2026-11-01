@@ -207,7 +207,10 @@ def main() -> int:
             problems.append(
                 f"{CHANGELOG}'s newest section [{version}] has had no tag for "
                 f"{age} days — too long to still be a release in flight. Either "
-                f"it was never minted, or the tag was deleted"
+                f"it was never minted, or the tag was deleted. Mint it at the "
+                f"release commit: Actions → Mint release tag with `sha=<the "
+                f"release PR's merge commit>` (docs/release-process.md step 2). "
+                f"A docs PR cannot clear this: its own CI runs this check"
             )
             continue
         problems.append(

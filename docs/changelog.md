@@ -154,6 +154,21 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The mint can tag a release commit behind main's tip** (FND-322). The Mint
+  release tag workflow takes an optional `sha` input: a full 40-character commit
+  id that is an ancestor of main. Every check runs at that commit, the version is
+  the one its tree declares, the run lists the commits on main it leaves out, and
+  the tag message says it was minted at a requested commit. Without it, a release
+  left unminted past `check-release-tags`' 7-day limit could not be minted at
+  all: the mint refuses while the tip's `[Unreleased]` has content, and the docs
+  PR that would fold those entries in fails its own required `docs contract` job
+  on the age. v0.25.0 hit this (release PR #628, #629–#655 merged after it) and
+  was tagged by hand at its release commit, 39e0fa5. The check would have failed
+  in CI and was red locally in `check-all.sh`; no CI run fell between day 8 and
+  the tag. The age refusal now names the `sha=` remedy, and
+  `docs/release-process.md` gives both routes. The resolve step moved into
+  `scripts/mint-resolve.py`, which reads the version with the shared
+  `cargo_version` parser instead of its own copy.
 - **A `TL` or `NT` port on a segment more than one `EX` card drives is refused**
   (FND-305), on every frontend. nec2c prices that network from the first card and
   drives the structure with the last: on two dipoles with `EX 0 1 11` 1 V, then

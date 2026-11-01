@@ -200,6 +200,10 @@ jobs:
       # known-fail cases run here, before a mint depends on it.
       - name: Mint's empty-[Unreleased] check fails when it should
         run: python3 scripts/test-check-changelog-unreleased-empty.py
+      # The mint's resolver picks the commit the tag lands on; it too runs only in
+      # release-tag.yml, so its refusals are seen failing here first (FND-322).
+      - name: Mint's commit resolver refuses what it should
+        run: python3 scripts/test-mint-resolve.py
       # `bindings/fnec_py` declares its version twice and maturin stamps the
       # *pyproject* one onto the wheel. They drifted and it shipped: v0.14.0
       # announced fnec_py 0.5.0 and published a wheel calling itself 0.4.0.
