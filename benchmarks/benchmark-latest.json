@@ -1,224 +1,224 @@
 {
   "schema_version": "1",
-  "generated_at": "2026-11-01T19:41:26Z",
-  "git_sha": "7345002",
+  "generated_at": "2026-11-02T07:08:00Z",
+  "git_sha": "59fa4b4",
   "runner_nproc": 4,
   "runs": [
     {
       "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "cpu-single",
-      "elapsed_ms": 3
+      "elapsed_ms": 4
     },
     {
       "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "cpu-single",
-      "elapsed_ms": 3
+      "elapsed_ms": 4
     },
     {
       "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "cpu-single",
-      "elapsed_ms": 3
+      "elapsed_ms": 4
     },
     {
       "deck": "dipole-freesp-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "hallen",
-      "exec_mode": "gpu",
-      "elapsed_ms": 30
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "hallen",
-      "exec_mode": "gpu",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "hallen",
-      "exec_mode": "gpu",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-single",
-      "elapsed_ms": 2
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-single",
-      "elapsed_ms": 2
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-single",
-      "elapsed_ms": 2
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "gpu",
-      "elapsed_ms": 2
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "gpu",
-      "elapsed_ms": 2
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "gpu",
-      "elapsed_ms": 2
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-single",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-single",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-single",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "cpu-multi",
       "elapsed_ms": 4
     },
     {
-      "deck": "dipole-ground-51seg",
+      "deck": "dipole-freesp-51seg",
       "solver": "hallen",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 4
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "hallen",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 4
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "hallen",
+      "exec_mode": "gpu",
+      "elapsed_ms": 61
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "hallen",
+      "exec_mode": "gpu",
+      "elapsed_ms": 5
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "hallen",
+      "exec_mode": "gpu",
+      "elapsed_ms": 5
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
+      "exec_mode": "cpu-single",
+      "elapsed_ms": 3
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
+      "exec_mode": "cpu-single",
+      "elapsed_ms": 3
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
+      "exec_mode": "cpu-single",
+      "elapsed_ms": 3
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 4
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 4
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 4
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
+      "exec_mode": "gpu",
+      "elapsed_ms": 4
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
+      "exec_mode": "gpu",
+      "elapsed_ms": 4
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
       "exec_mode": "gpu",
       "elapsed_ms": 4
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
-      "exec_mode": "gpu",
-      "elapsed_ms": 3
+      "exec_mode": "cpu-single",
+      "elapsed_ms": 5
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "cpu-single",
+      "elapsed_ms": 4
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "cpu-single",
+      "elapsed_ms": 5
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 5
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 5
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 5
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
+      "elapsed_ms": 5
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "gpu",
+      "elapsed_ms": 5
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "gpu",
+      "elapsed_ms": 5
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "pulse",
+      "exec_mode": "cpu-single",
       "elapsed_ms": 3
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-single",
-      "elapsed_ms": 2
+      "elapsed_ms": 3
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-single",
-      "elapsed_ms": 2
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-single",
-      "elapsed_ms": 2
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-multi",
       "elapsed_ms": 3
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
+      "elapsed_ms": 4
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-multi",
-      "elapsed_ms": 2
+      "elapsed_ms": 4
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "pulse",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 5
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
       "exec_mode": "gpu",
-      "elapsed_ms": 3
+      "elapsed_ms": 4
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
       "exec_mode": "gpu",
-      "elapsed_ms": 2
+      "elapsed_ms": 4
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
       "exec_mode": "gpu",
-      "elapsed_ms": 3
+      "elapsed_ms": 4
     }
   ],
   "summary": [
@@ -227,58 +227,31 @@
       "solver": "hallen",
       "exec_mode": "cpu-single",
       "n_runs": 3,
-      "avg_ms": 3,
-      "min_ms": 3,
-      "max_ms": 3
+      "avg_ms": 4,
+      "min_ms": 4,
+      "max_ms": 4
     },
     {
       "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "cpu-multi",
       "n_runs": 3,
-      "avg_ms": 3,
-      "min_ms": 3,
-      "max_ms": 3
+      "avg_ms": 4,
+      "min_ms": 4,
+      "max_ms": 4
     },
     {
       "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
       "n_runs": 3,
-      "avg_ms": 12,
-      "min_ms": 3,
-      "max_ms": 30
+      "avg_ms": 23,
+      "min_ms": 5,
+      "max_ms": 61
     },
     {
       "deck": "dipole-freesp-51seg",
       "solver": "pulse",
-      "exec_mode": "cpu-single",
-      "n_runs": 3,
-      "avg_ms": 2,
-      "min_ms": 2,
-      "max_ms": 2
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-multi",
-      "n_runs": 3,
-      "avg_ms": 3,
-      "min_ms": 3,
-      "max_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "gpu",
-      "n_runs": 3,
-      "avg_ms": 2,
-      "min_ms": 2,
-      "max_ms": 2
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
       "exec_mode": "cpu-single",
       "n_runs": 3,
       "avg_ms": 3,
@@ -286,49 +259,76 @@
       "max_ms": 3
     },
     {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
       "exec_mode": "cpu-multi",
       "n_runs": 3,
-      "avg_ms": 3,
-      "min_ms": 3,
+      "avg_ms": 4,
+      "min_ms": 4,
+      "max_ms": 4
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
+      "exec_mode": "gpu",
+      "n_runs": 3,
+      "avg_ms": 4,
+      "min_ms": 4,
       "max_ms": 4
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
+      "exec_mode": "cpu-single",
+      "n_runs": 3,
+      "avg_ms": 4,
+      "min_ms": 4,
+      "max_ms": 5
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "cpu-multi",
+      "n_runs": 3,
+      "avg_ms": 5,
+      "min_ms": 5,
+      "max_ms": 5
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
       "exec_mode": "gpu",
       "n_runs": 3,
-      "avg_ms": 3,
-      "min_ms": 3,
-      "max_ms": 4
+      "avg_ms": 5,
+      "min_ms": 5,
+      "max_ms": 5
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-single",
       "n_runs": 3,
-      "avg_ms": 2,
-      "min_ms": 2,
-      "max_ms": 2
+      "avg_ms": 3,
+      "min_ms": 3,
+      "max_ms": 3
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-multi",
       "n_runs": 3,
-      "avg_ms": 2,
-      "min_ms": 2,
-      "max_ms": 3
+      "avg_ms": 4,
+      "min_ms": 4,
+      "max_ms": 5
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
       "exec_mode": "gpu",
       "n_runs": 3,
-      "avg_ms": 2,
-      "min_ms": 2,
-      "max_ms": 3
+      "avg_ms": 4,
+      "min_ms": 4,
+      "max_ms": 4
     }
   ]
 }
