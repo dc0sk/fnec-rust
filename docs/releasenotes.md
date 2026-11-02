@@ -2,10 +2,113 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-10-22
+last_updated: 2026-11-01
 ---
 
 # Release Notes
+
+## 0.26.0 — As NEC-2 reads it
+
+Most of this release reads a deck the way NEC-2 reads it. fnec chose a card's layout by
+counting its fields, read tag 0 as a wire tag, summed two `EX` cards on one segment,
+and accepted fields it never used: `RP`'s mode and XNDA digits, `GN`'s radial screen, a
+fraction in an integer field. Each is now read as nec2c 1.3.1 reads it, or refused by
+name with the rewrite. Two new commands, `fnec match` and `fnec converge`, and the JSON
+report carrying every feedpoint, are the additions.
+
+**Answers move on decks that solved before.** Measured on a release build of the
+release branch (main 7345002 plus the version bump) against the published 0.25.0
+binary, over all 57 decks in `corpus/`, run as written:
+
+| | 0.25.0 | 0.26.0 |
+|---|---|---|
+| 49 decks (five of them refused by both, with the same message) | — | the same bytes, apart from the `FNEC_BUILD` line |
+| the seven `dipole-*pt*` decks (`PT 0 1 26 0`) | 51 `CURRENTS` rows | the one row the card selects, segment 26 (FND-299) |
+| `dipole-ex4-gn2-near-ground-51seg` | source current `1 + j0` | `1 − j5.6e-17` (`-0.000000` in `FEEDPOINTS`); the impedance is unchanged |
+| the `diag:` line of the 52 decks that solve (stderr) | `sin_rel_res=0.000000e0` | `n/a` where the route computes no residual, and a new `fill_exec` field (FND-306, FND-293) |
+
+**Breaking for deck and CLI users** — each refused card names its rewrite:
+
+- **Cards are read by position** (FND-284). The 4-field `FR 0 1 29.9 0` is refused:
+  write `FR 0 1 0 0 29.9 0`. The 7-field `RP` with a real XNDA is refused: write the
+  8-field card. Decks the GUI saved before this release used the 4-field `FR`.
+- **Tag 0 names an absolute segment number** (FND-282). `LD 4 0 11 11 …` loaded segment
+  11 of every wire; it now loads absolute segment 11. Write one card per tag to load a
+  segment on every wire.
+- **`PT` selects as NEC-2 does** (FND-299): a range restricts the print with `I1 = 0`
+  too. To print one tag's currents, write `PT 0 t 1 n`.
+- **`RP`'s XNDA thousands digit no longer normalizes** (FND-298): a 4nec2 deck's
+  `RP 0 … 1000 …` stops printing `NORMALIZED_PATTERN`; write `0500` to ask for it. The D
+  digit now reports directive gain.
+- **Refused now:** `RP` modes 1–6 (FND-285); `GN`'s radial screen over a finite ground
+  (FND-283; model the radials as wires under `--solver mpie`); a negative `LD` type
+  (FND-292); a fraction in an integer field, and a negative count or segment reference
+  (FND-300); `EX` I4 units digits 2–9 on a voltage source (FND-309); a `TL`/`NT` port on
+  a segment two `EX` cards drive (FND-305); `--output-format nec2d` with
+  `--ground-solver sommerfeld` over a finite ground (FND-286); `--hosts` on a deck with
+  more than one feedpoint (FND-304); a `--sweep-config` range whose step is below its
+  resolution (FND-316). `GD` is now ignored with a warning instead of refused.
+- **Two `EX` cards on one segment apply the last** (FND-305), as nec2c does; fnec summed
+  them. The impedance is the same either way, the currents, gain and power are not.
+- **Machine-read records:** the `diag:` line and `--bench-format csv` print `n/a` (JSON
+  `null`) for a residual the route did not compute, where they printed `0` (FND-306);
+  the `diag:` line gains `fill_exec` before `solve_exec` (FND-293). A `--hosts` worker's
+  error for a task whose deck and frequency are both bad now reports the deck, and its
+  frequency message starts `frequency_hz:` (FND-290).
+
+**Breaking for Rust library users:** `nec_solver::solve_current_source_hallen` returns
+`CurrentSourceError::NeedsRoutedSolve` for a bent or reversed conductor path (FND-310),
+as it has for a junction or loop since FND-211; call `nec_solver::solve_hallen_routed`.
+No frontend reached that arm. `nec_solver::linear_range_mhz` and its `RangeError` (with
+`StepBelowResolution`, FND-316) are new in this release, so they break nothing.
+
+**Not breaking (additive):** the JSON report's `feedpoints` array (FND-291) and
+`input_impedance` object (FND-314) — v1 consumers are unaffected and the top-level
+fields are still the first feedpoint's; `fnec_py`'s `feedpoints` list (FND-308); the
+text report's `INPUT_IMPEDANCE` section (FND-309; `FORMAT_VERSION` stays 1); new caveats
+on stderr for a feed at a free wire end (FND-294) and a driven `TL`/`NT` port there
+(FND-311), and for a Hallén residual above 1e-5 (FND-302, `--hallen-residual-caveat`).
+
+**Added:**
+
+- **`fnec match`** gives every lossless L-network that presents a target impedance at
+  the feedpoint, typed or solved from a deck; text and `fnec-match/1` JSON. Unit tests
+  on `nec_solver::lnetwork` and the CLI contract test `match_contract.rs`.
+- **`fnec converge`** solves a deck meshed 1×, 3× and 9× finer and says whether the
+  feedpoint has settled, with the extrapolated limit of a settled series; text and `fnec-converge/1` JSON.
+  `converge_contract.rs` pins its series on the corpus dipole to fnec's own measured
+  values (9×: 79.6473 + j46.3620 Ω) and recomputes its verdict from them; nec2c's 27×
+  value there, 79.710 + j46.719 Ω, is quoted beside it, not gated.
+- **Every feedpoint in JSON and in `fnec_py`**, and `EX` I4's input-impedance table in
+  the text report and in JSON.
+
+**Fixed, among others:** a GPU-resident solve is checked against the f64 problem and
+declines to the CPU above 1e-4 (FND-307), and a device lost during a readback declines
+instead of aborting `fnec` (FND-321); the GUI's sweep and the worker check the
+frequencies they run, through one range expander (FND-290, FND-297 c); one definition of
+the physical constants, which moves ε0 by under 10⁻⁹ relative and MPIE reactances by 1
+in the sixth decimal (FND-297 b); the NEC-2D report prints a negative-σ ground as the
+solve uses it (FND-303). The changelog lists each with its numbers.
+
+**Evidence:** the nec2c numbers behind these changes are held by tests that compare
+fnec with values recorded from nec2c 1.3.1 runs — `tag_zero_nec2c.rs`
+(`LD 4 0 11 11 0 1000`: nec2c 22.282 + j1060.1 Ω, held within 8 % of |Z|, a band that
+tells the right segment from a wrong one), `rp_cards_nec2c.rs`,
+`two_sources_one_segment_nec2c.rs` (|I| within 3 % of nec2c's 5.4722e-3 A), `dipole_shared_limit.rs` (FND-315) — and the
+card-field disposition table (`card_matrix.rs`, `card_field_reach.rs`) holds every field
+of every card to being used, refused or ignored with a warning. These are reference
+gates against nec2c, not field measurements.
+
+**Release tooling:** the Mint release tag workflow takes an optional `sha` input to tag
+a release commit behind main's tip (FND-322; see `docs/release-process.md`), and the
+findings-ledger checker now requires a `fixed` row to name its fixing PR (FND-317,
+FND-323). Neither changes what fnec computes.
+
+The Python bindings move to fnec_py 0.17.0: the parser and solver changes above reach
+them too, and solve and sweep dicts gain `feedpoints`.
+
+Ledger: 281 findings at v0.25.0, 321 now (FND-282 to FND-323; 312 and 313 were never
+assigned), none open; FND-005 stays deferred.
 
 ## 0.25.0 — Where wires meet
 

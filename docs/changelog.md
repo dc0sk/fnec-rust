@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-22
+last_updated: 2026-11-01
 ---
 
 # Changelog
@@ -14,6 +14,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). S
 from 0.13.0 and earlier predate the Keep a Changelog headings and are left as written.
 
 ## [Unreleased]
+
+## [0.26.0] — 2026-11-01 — As NEC-2 reads it
 
 ### Added
 
@@ -105,6 +107,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   `sweep --resonance`, `fnec worker`, the GUI and `fnec_py` — so the caveat can
   be shown to fire through each of them; no corpus deck reaches the default.
 
+- **One table of what fnec does with every field of every card** (#635).
+  `nec_model::card::FIELD_DISPOSITION` gives each field position of each card the
+  parser types a disposition — consumed, refused, ignored with a warning, silent,
+  kept and unread, or unused by NEC-2's format — with the deck and values that
+  probe it. `crates/nec_parser/tests/card_matrix.rs` holds the parser to it and
+  `apps/nec-cli/tests/card_field_reach.rs` holds the solve to it (a consumed
+  value must change the solution or be refused); every ignored field is listed
+  in `docs/card-support-matrix.md`. It guards the class of FND-280/283/285/298, a
+  field accepted and never read; it does not catch a field read wrongly, which
+  only the nec2c-anchored gates do.
+
 ### Changed
 
 - **Two `EX` cards on one segment drive it as NEC-2 does** (FND-305). fnec summed
@@ -151,6 +164,22 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   `diag_spread` of a `--hosts` bench record, which the worker does not send.
   `scripts/pi-benchmark-compare.sh` and `-summary.sh` average only numeric
   samples, so `n/a` no longer averages in as a 0.
+
+- **The CLI tests build every scratch path through `common::TempDeck` or
+  `common::TempDir`** (FND-320, #656, #659). 41 test files built theirs from
+  `std::env::temp_dir()` by hand, each with its own copy of the uniqueness rule,
+  16 on `SystemTime` nanoseconds alone (FND-319's mechanism). `TempDir` is
+  `TempDeck`'s directory sibling, with the same per-process counter. A new gate,
+  `scripts/check-scratch-paths.py` with its self-test, run by `check-all.sh` and
+  CI, refuses a hand-built scratch path outside `common/mod.rs` unless
+  `scripts/scratch-paths-allowlist.txt` lists it with a reason; one entry is
+  left, `temp_deck_contract.rs`, which tests `TempDeck::try_at` on a planted path.
+
+### Removed
+
+- **A compiled pytest cache file is no longer tracked** (#646):
+  `bindings/fnec_py/tests/__pycache__/test_smoke.cpython-314-pytest-9.0.3.pyc`
+  was committed before `.gitignore` listed `__pycache__/`.
 
 ### Fixed
 
@@ -505,6 +534,20 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   row, and in PR CI the cited number must be the PR's own or a merged one's,
   so a predicted number that another PR took fails. The same class as FND-134
   and FND-317, a third time.
+
+- **Two CLI tests running in parallel no longer share a scratch file** (FND-319,
+  #655). CI on #650 failed `loads_config_validation`'s tag-9 refusal with exit 0
+  and the impedance of the test beside it: both named their files by
+  `SystemTime` nanoseconds and read the same value. `common::TempDeck` now owns
+  uniqueness (`fnec-t{pid}-{n}-{file_name}`, a per-process counter), opens the
+  file `create_new` and refuses a name with a directory part;
+  `temp_deck_contract.rs` gates it.
+
+### Docs
+
+- **The findings ledger records the v0.25.0 audit** (FND-282..302, #629) and six
+  findings from the batch A/B design (FND-303..308, #634). Each is fixed in this
+  release, under the entries above.
 
 ## [0.25.0] — 2026-10-22 — Where wires meet
 
@@ -4368,7 +4411,8 @@ Hallén path is unchanged, so the validated corpus is untouched.
      v0.8.0 and v0.9.0 were released without tags, so there is no ref to compare
      against and inventing one would be worse than the gap (FND-043). -->
 
-[Unreleased]: https://github.com/dc0sk/fnec-rust/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/dc0sk/fnec-rust/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/dc0sk/fnec-rust/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/dc0sk/fnec-rust/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/dc0sk/fnec-rust/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/dc0sk/fnec-rust/compare/v0.22.0...v0.23.0
