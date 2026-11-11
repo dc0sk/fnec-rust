@@ -62,10 +62,10 @@ jobs:
       contents: write
       # Job-level `permissions:` replaces the entire map rather than adding to it,
       # so without this the token has contents + metadata and nothing else. The
-      # check-runs gate below reads an API that happens to answer unauthenticated
-      # while this repository is public — i.e. it would pass for a reason that
-      # disappears the day it goes private, on the one step no run has exercised.
-      checks: read
+      # CI gate below reads the workflow-runs API, which happens to answer
+      # unauthenticated while this repository is public — i.e. it would pass for
+      # a reason that disappears the day it goes private (FND-324).
+      actions: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -78,6 +78,12 @@ jobs:
       # and git only; it adds nothing to this job's third-party surface.
       - name: The resolver refuses what it should
         run: python3 scripts/test-mint-resolve.py
+
+      # The same for the CI verdict below: it decides whether this commit may be
+      # tagged, and it is seen saying pending, cancelled and failed here first,
+      # against a fake gh (FND-324).
+      - name: The CI verdict says what it should
+        run: python3 scripts/test-mint-ci-verdict.py
 
       - name: Resolve the version and the commit to tag
         id: resolve
@@ -154,22 +160,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.resolve.outputs.sha }}
+        # Judges the push-event runs of ci.yml at SHA, every job, latest attempt;
+        # scheduled and dispatch runs (this one included) are listed, not obeyed.
+        # Says green, pending (exit 75: wait, dispatch again), cancelled (`gh run
+        # rerun`), failed, not-run, unknown or none, and names the jobs and the
+        # run. The rules, and why `--paginate` is never paired with `--jq`, are in
+        # the script (FND-324). GITHUB_REPOSITORY comes from the runner.
         run: |
           set -euo pipefail
-          # `mint` is this job's id (the job has no `name:`), and the filter
-          # excludes it so a previous failed attempt at the same SHA cannot wedge a
-          # retry. Renaming the job — or giving it a display name — makes the gate
-          # see its own null-conclusion run and the workflow can then never pass.
-          #
-          # --paginate because the default page is 30: past that, a failure on page
-          # two would be unseen, and this gate must not fail open.
-          CONCLUSION=$(gh api --paginate "repos/${{ github.repository }}/commits/$SHA/check-runs" \
-            --jq '[.check_runs[] | select(.name != "mint")] | if length == 0 then "none" else (if any(.conclusion != "success") then "failed" else "success" end) end')
-          echo "check-runs at $SHA: $CONCLUSION"
-          if [ "$CONCLUSION" != "success" ]; then
-            echo "::error::CI is not green at $SHA ($CONCLUSION) — refusing to tag it"
-            exit 1
-          fi
+          python3 scripts/mint-ci-verdict.py
 
       - name: Build the tag message
         run: |
