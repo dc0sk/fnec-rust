@@ -1091,7 +1091,7 @@ two git refs.
 
 ## Supported NEC cards
 
-For the full card support matrix including field mappings and per-type details, see [docs/card-support-matrix.md](card-support-matrix.md).
+For the full card support matrix including field mappings and per-type details, see [docs/card-support-matrix.md](card-support-matrix.md). Which NEC-4 cards and features fnec supports, and which it defers, is in [docs/nec4-support.md](nec4-support.md).
 
 Quick reference:
 

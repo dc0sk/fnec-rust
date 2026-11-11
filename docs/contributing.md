@@ -125,6 +125,9 @@ Keep branches short-lived. Open a PR as soon as the work is ready for review, ev
 4. All 10 CI checks must pass before merge. Do not merge with failing CI.
 5. Merge strategy: **squash-merge only**. Delete the branch after merge.
 6. Update `docs/changelog.md` in the same PR for any user-visible change.
+7. A new or changed dependency must meet [the dependency policy](dependency-policy.md): its licence
+   on the allowlist, no banned crate, crates.io sources only. `cargo deny check bans licenses sources`
+   enforces it in CI and in `scripts/check-all.sh`; the policy also gives the exception process.
 
 ## Corpus-gate requirements
 
