@@ -47,7 +47,26 @@ requested commit, with main's tip and the count of later commits.
 
 The workflow refuses to re-tag. It checks the changelog and release-notes
 sections, that `[Unreleased]` is empty, the binding version and the SBOM, and it
-requires green CI at the commit it tags. Never tag by hand: the v0.25.0 tag was
+requires green CI at the commit it tags: every job of the push-event `CI` run
+there (`scripts/mint-ci-verdict.py`). Scheduled and dispatch runs at that commit
+do not decide — the weekly run fails on the release's age, and must not block
+the mint it asks for — but the run summary lists any that are not green. When it
+refuses, the word says what to do:
+
+- **pending** — a job has not finished (the run was dispatched too soon after
+  the merge). Wait for the named run, then dispatch again.
+- **cancelled** — a later push to main cancelled the run (`cancel-in-progress`).
+  `gh run rerun <id>` with the named run, wait for it, then dispatch again.
+- **failed** — a job failed, timed out, failed to start, or needs approval. Fix
+  it on main.
+- **not-run** — a job was skipped or neutral; no ci.yml job has an `if:`, so find
+  out why.
+- **unknown** — GitHub reported a conclusion the script does not know. Read it,
+  then add it to the script's table.
+- **none** — no push-event CI run at the commit: it reached main without a push
+  run, which should not happen. Find out how before minting it.
+- **could not read** — the `gh` call itself failed; its message is quoted. Not a
+  verdict; dispatch again once the API answers. Never tag by hand: the v0.25.0 tag was
 placed by hand (FND-322) because neither route existed; the `sha` input is that
 route.
 

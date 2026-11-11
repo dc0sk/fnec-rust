@@ -172,6 +172,7 @@ run "corpus provenance self-test" python3 scripts/test-derive-corpus-provenance.
 run "check-asset-platform self-test" python3 scripts/test-check-asset-platform.py
 run "unreleased-empty self-test" python3 scripts/test-check-changelog-unreleased-empty.py
 run "mint-resolve self-test" python3 scripts/test-mint-resolve.py
+run "mint-ci-verdict self-test" python3 scripts/test-mint-ci-verdict.py
 run "physical-constants self-test" python3 scripts/test-check-physical-constants.py
 run "findings-ledger self-test" python3 scripts/test-check-findings-ledger.py
 run "scratch-paths self-test" python3 scripts/test-check-scratch-paths.py
