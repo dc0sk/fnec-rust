@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/contributing.md
 status: living
-last_updated: 2026-10-13
+last_updated: 2026-11-11
 ---
 
 # Contributing

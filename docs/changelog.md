@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-11-01
+last_updated: 2026-11-11
 ---
 
 # Changelog
