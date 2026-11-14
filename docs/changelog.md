@@ -17,6 +17,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The mint's CI gate says pending, cancelled or failed, and judges the push CI
+  run** (FND-324). Dispatched 21 s after a merge, the Mint release tag workflow
+  refused with "CI is not green (failed)" while two jobs were still running; a
+  run cancelled by a later push read "failed" too. `scripts/mint-ci-verdict.py`
+  now judges every job of the push-event `CI` run at the commit and names the
+  state, the jobs, the run and the remedy (wait, `gh run rerun`, fix main),
+  reading every page of the API itself: `gh api --paginate --jq` reduced each
+  page separately, so a commit with more than 30 check runs could never be
+  minted. Scheduled and dispatch runs no longer decide, so the weekly run that
+  fails on an unminted release's age cannot block that release's mint; they are
+  listed in the run summary. `docs/release-process.md` step 2 says what each
+  refusal word asks for.
+
 - **The controller's read of a worker's answer is bounded** (FND-331). The
   distributed controller read each worker's stdout with an unbounded `lines()`,
   so a worker (local or over `--hosts`) writing a line without end grew one
