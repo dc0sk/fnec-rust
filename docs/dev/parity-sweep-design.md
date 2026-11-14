@@ -234,7 +234,11 @@ there a same-mesh gap is a fixed offset plus the difference of two discretisatio
 errors, and its direction stopped meaning anything once FND-270 matched fnec's error to
 nec2c's. A cell fails unless the gap shrinks from the coarse
 mesh to the fine one and the fine gap is under its cap (MPIE 3 %, Hallén 12 %); both
-gaps and the run's `gsolver` are pinned. Built when BL-IMPR-015's DCIM port was
+gaps and the run's `gsolver` are pinned. Every Hallén-with-correction deck here has its
+segments no longer than their height (Δ/H 0.95 at 0.025 λ and 21 segments) and sits at
+0.025 λ or more: inside the correction's bound (FND-325), which declines a coarser mesh
+and caveats below 0.01 λ; those regimes are gated in `sommerfeld_resolution_bound.rs`.
+Built when BL-IMPR-015's DCIM port was
 rejected (`docs/sommerfeld-level2-scope.md` § Phase 3): the regime it was meant to
 improve is now held where it stands. Its first run found FND-220 — the decision record
 said `gsolver=rcm` for the MPIE.

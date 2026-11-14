@@ -15,6 +15,26 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Fixed
+
+- **`--ground-solver sommerfeld` declines a mesh coarser than its height instead
+  of returning a reactance up to 500× wrong** (FND-325). Its reaction sum samples
+  the reflected kernel once per segment pair, and where a segment is longer than
+  its height above ground it keeps the kernel's peak and never samples the lobe
+  that cancels it: a λ/2 dipole 0.02 m up on 0.238 m segments read
+  1185.64 + j132187.3 Ω, exit 0, against nec2c's 177.86 + j255.89, and the
+  low-ground warning named the flag as the remedy. The correction now applies
+  only where every segment is no longer than its midpoint's height — the same
+  bound for horizontal and tilted wires, measured ≤ 2.5 % from nec2c at 1.0 —
+  and otherwise keeps the reflection-coefficient result with a warning naming
+  `--solver mpie` (`gsolver=sommerfeld-declined-resolution`). Below 0.01 λ an
+  applied correction carries a caveat on its `info:` line (first-order in the
+  current, it reads R 5–20 % low there). The low-ground warning names the flag
+  only where it applies inside both bounds — one verdict,
+  `sommerfeld::correction_verdict`, for the solve, the caveat, the advice and
+  the `diag:` line. `fnec converge` says a decline once per run, naming the
+  meshes it hit. The ρ-grid's interpolation error inside the bound is FND-354.
+
 ## [0.26.0] — 2026-11-01 — As NEC-2 reads it
 
 ### Added

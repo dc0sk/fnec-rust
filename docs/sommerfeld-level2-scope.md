@@ -20,7 +20,9 @@ scoping layer on top of it.
 - **`--ground-solver sommerfeld` (Hallén path, "Level 1")** — corrects the
   near-ground **feedpoint Z** of any *straight* wire (arbitrary orientation) with
   the Sommerfeld/Norton surface wave, via a post-solve induced-EMF reaction
-  integral (`sommerfeld::ground_z_correction`). Declines bent geometry (keeps RCM).
+  integral (`sommerfeld::ground_z_correction`). Declines bent geometry (keeps RCM),
+  and a mesh with a segment longer than its height, where its midpoint reaction sum
+  is unresolved; caveated below 0.01 λ, where it reads R 5–20 % low (FND-325).
 - **`--solver mpie` (+ Sommerfeld kernels in the Z-fill)** — already produces the
   full near-ground solution — **per-segment currents AND radiation pattern** — for
   **straight and bent** wires entirely above ground. Since FND-239 it adds

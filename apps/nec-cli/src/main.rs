@@ -997,12 +997,14 @@ fn main() -> ExitCode {
 
     // D1 of FND-286: the corrected impedance is a one-port ΔZ on the solve's V/I,
     // so the row's I is not V/Z and the currents and pattern are the rcm solve's.
-    // Said once per run, not per point.
-    if solved
-        .iter()
-        .any(|(_, r, _)| r.as_ref().is_ok_and(|p| p.surface_wave_applied))
-    {
-        eprintln!("{SURFACE_WAVE_APPLIED_INFO}");
+    // Said once per run, not per point, with the FND-325 caveat where it ran below
+    // its measured band.
+    if let Some(info) = solve_session::surface_wave_info_for_run(
+        solved
+            .iter()
+            .filter_map(|(_, r, _)| r.as_ref().ok().map(|p| p.sommerfeld_outcome)),
+    ) {
+        eprintln!("{info}");
     }
 
     if enable_benchmarking && bench_format == BenchFormat::Csv {
@@ -1073,12 +1075,6 @@ fn main() -> ExitCode {
         ExitCode::SUCCESS
     }
 }
-
-/// What a run whose impedance carries the surface-wave correction is told about
-/// the rest of its report (FND-286, decision D1).
-const SURFACE_WAVE_APPLIED_INFO: &str =
-    "info: --ground-solver sommerfeld: Z includes the surface-wave correction; V, I, the \
-     currents and the pattern are the reflection-coefficient solve's (PH9-CHK-006, FND-286)";
 
 /// How a `--hosts` user reaches the MPIE: not by adding `--solver mpie`, which
 /// `--hosts` refuses, but by running without it (FND-221).
@@ -1569,7 +1565,7 @@ fn run_distributed_solve(
                     min_feed_re: Some(impedance.re_ohm),
                     ran_on_gpu: exec_used == "gpu",
                     // The controller refuses --ground-solver sommerfeld.
-                    surface_wave_applied: false,
+                    sommerfeld_outcome: solve_session::SommerfeldOutcome::NotRequested,
                     // The controller refuses --loads-config, so the worker's
                     // loads are the deck's own.
                     run_loads: nec_solver::validate::RunLoads::of_run(

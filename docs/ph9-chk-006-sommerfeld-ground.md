@@ -131,6 +131,7 @@ approximation with no surface wave.
 | angle- & polarization-dependent Fresnel (nec2c GN0 RCM) | deferred — **low value** (fnec ≈ RCM already) |
 | Sommerfeld/Norton surface wave (nec2c GN2 exact) — straight horizontal wire | **implemented + wired** as an opt-in solver: `fnec --ground-solver sommerfeld` (default `rcm`); reproduces nec2c GN2 incl. the low-height sign flip (~13 %) |
 | Sommerfeld surface wave — straight vertical / tilted / sloping wire | **implemented** (Level 1, general reflected dyadic); adds the surface-wave gap correctly, though absolute GN2 match is looser off-horizontal (bounded by fnec's scalar-Γ baseline) |
+| Sommerfeld surface wave — a segment longer than its height above ground | **declined** with a warning naming `--solver mpie` (`gsolver=sommerfeld-declined-resolution`, FND-325): the midpoint reaction sum is unresolved there and read 2× to 500× wrong; below 0.01 λ the correction applies with a caveat (R 5–20 % low) |
 | Sommerfeld surface wave — bent / mixed geometry, and currents/patterns | deferred; `--ground-solver sommerfeld` declines bent geometry with a warning (keeps RCM). Correct currents/patterns near ground = Level 2 (kernel in the Z-matrix via DCIM) |
 | buried wire | deferred → fail-fast (unchanged) |
 
