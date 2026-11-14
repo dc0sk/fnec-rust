@@ -15,14 +15,31 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Fixed
+
+- **The mint's CI gate says pending, cancelled or failed, and judges the push CI
+  run** (FND-324). Dispatched 21 s after a merge, the Mint release tag workflow
+  refused with "CI is not green (failed)" while two jobs were still running; a
+  run cancelled by a later push read "failed" too. `scripts/mint-ci-verdict.py`
+  now judges every job of the push-event `CI` run at the commit and names the
+  state, the jobs, the run and the remedy (wait, `gh run rerun`, fix main),
+  reading every page of the API itself: `gh api --paginate --jq` reduced each
+  page separately, so a commit with more than 30 check runs could never be
+  minted. Scheduled and dispatch runs no longer decide, so the weekly run that
+  fails on an unminted release's age cannot block that release's mint; they are
+  listed in the run summary. `docs/release-process.md` step 2 says what each
+  refusal word asks for.
+
 ### Docs
 
 - **The roadmap's gaps table says which gaps the tree has closed.** GAP-004,
   GAP-010, GAP-011, GAP-012 and GAP-014 are marked resolved, each with the PR and
-  file that closed it; GAP-002, GAP-008 and GAP-009 stay open, each with one
-  sentence naming what is missing; BLK-001 and BLK-002 carry their resolution
-  dates. FND-320's file counts (39, 42, 41) are each defined against the commit
-  they were measured on.
+  file that closed it; GAP-002 and GAP-008 are resolved by the links they lacked
+  (`docs/cli-guide.md` now points to `docs/nec4-support.md`, and
+  `docs/contributing.md` to `docs/dependency-policy.md`); GAP-009 stays open
+  pending a maintainer's decision. BLK-001 and BLK-002 carry their resolution
+  dates. FND-320's file counts are defined: 42 test files at filing (the
+  ledger's earlier 39 could not be reproduced), 41 migrated by #659, 1 left.
 
 ## [0.26.0] — 2026-11-01 — As NEC-2 reads it
 
