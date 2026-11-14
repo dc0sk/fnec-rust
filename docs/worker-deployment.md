@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/worker-deployment.md
 status: living
-last_updated: 2026-09-27
+last_updated: 2026-11-14
 ---
 
 # Worker Node Deployment Guide
