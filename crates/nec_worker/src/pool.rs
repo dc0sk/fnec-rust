@@ -65,8 +65,8 @@ impl WorkerHandle {
     /// Return a human-readable label for this worker.
     fn label(&self) -> String {
         match self {
-            WorkerHandle::Local(_) => "local".to_string(),
-            WorkerHandle::Ssh(h) => format!("ssh:{}", h.hostname()),
+            WorkerHandle::Local(h) => h.label(),
+            WorkerHandle::Ssh(h) => h.label(),
         }
     }
 }

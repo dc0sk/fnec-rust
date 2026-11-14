@@ -374,7 +374,12 @@ impl Default for WorkerSolverConfig {
 /// A task dispatched by the controller to the worker.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TaskMessage {
-    /// Opaque UUID-v4 task identifier assigned by the controller.
+    /// Opaque task identifier assigned by the controller, echoed on its result.
+    ///
+    /// Not a UUID, whatever older prose said: the CLI sends `{deck_hash}-{fidx}`
+    /// (`na-0`, `na-1`, …), unique within one run, and the capability probe a
+    /// constant. That is enough, because each pipe has one task in flight and
+    /// the controller pairs an answer with the task by this id (FND-326).
     pub task_id: String,
     /// SHA-256 hex digest of the deck bytes (informational; worker does not verify).
     pub deck_hash: String,
@@ -414,6 +419,12 @@ pub struct Impedance {
     pub re_ohm: f64,
     pub im_ohm: f64,
 }
+
+/// The `task_id` a worker answers with when it could not read the task at all:
+/// a task line it could not decode (FND-060), one past [`MAX_LINE_BYTES`]
+/// (FND-096), or a result it could not serialise. One task is in flight per
+/// worker, so the controller takes such an answer as the waiting task's (FND-326).
+pub const UNKNOWN_TASK_ID: &str = "unknown";
 
 /// Machine-readable error codes (see design doc §3.2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

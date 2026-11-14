@@ -59,6 +59,14 @@ controller log).
 This design avoids any custom port or daemon; the SSH connection itself is the
 only network socket.
 
+`stdout` is the protocol channel, and over SSH it is shared with whatever the
+remote login shell prints before `exec`ing the worker — a `.bashrc` `echo`, a
+`/etc/profile.d` script. That is tolerated: a line that is not the answer to
+the task in flight is skipped, and the controller warns once per worker, naming
+it and quoting the first lines (§3.3). Keep non-interactive shell startup silent
+on stdout (`docs/worker-deployment.md`); a worker that writes 64 such lines for
+one task is evicted as not speaking the protocol (FND-326).
+
 ### Message framing
 
 Each message is a single UTF-8 JSON object followed by a newline (`\n`).
@@ -70,9 +78,9 @@ The 4 MiB maximum (`MAX_LINE_BYTES`, newline included) is enforced on both ends
 by one bounded read, `nec_worker::protocol::read_bounded_line`: the read itself is
 capped, so an over-long line is never allocated, and its tail is drained to the
 newline so the next line is read as itself. The worker answers an over-long task
-line with a `resource_exhausted` error result (FND-096); the controller fails the
-task whose answer was over-long as a task fault and keeps the worker in the pool,
-the stream being back in sync (FND-331).
+line with a `resource_exhausted` error result (FND-096); the controller skips an
+over-long line as a stray (§3.3), the stream being back in sync (FND-331), and
+keeps reading for the task's answer.
 
 ### Reconnect policy
 
@@ -136,7 +144,7 @@ Each task message is a JSON object with the following mandatory fields:
 
 ```jsonc
 {
-  "task_id": "<uuid-v4>",          // opaque controller-assigned task identifier
+  "task_id": "na-0",               // opaque controller-assigned id: `{deck_hash}-{index}`
   "deck_hash": "<sha256-hex>",     // SHA-256 of the canonical deck bytes
   "deck_bytes": "<base64>",        // full deck, base64-encoded
   "solver_config": {               // serialised SolverConfig struct
@@ -158,7 +166,7 @@ A successful result message:
 
 ```jsonc
 {
-  "task_id": "<uuid-v4>",          // echoed from the input task
+  "task_id": "na-0",               // echoed from the input task
   "status": "ok",
   "frequency_hz": 14.175e6,
   "impedance": {
@@ -177,7 +185,7 @@ A failed result message:
 
 ```jsonc
 {
-  "task_id": "<uuid-v4>",
+  "task_id": "na-0",
   "status": "error",
   "frequency_hz": 14.175e6,
   "error_code": "singular_matrix",    // machine-readable code
@@ -249,6 +257,35 @@ draining its pool.
 
 - **Result ordering**: Results may arrive out-of-order relative to submission
   order.  The controller matches results to tasks via `task_id`.
+
+- **Pairing an answer with its task** (FND-326): each worker has one task in
+  flight, and the controller reads that worker's stdout until a line names it.
+  The `task_id` is not a UUID, whatever earlier drafts of this section said:
+  the CLI sends `{deck_hash}-{index}` (`na-0`, `na-1`, …), unique within one
+  run, and the capability probe a constant — enough under one task in flight.
+  The rule, line by line:
+  - a line that is not a result (a shell banner, junk), a result naming another
+    task (a late answer nobody waits for), and a line past the 4 MiB maximum
+    are **strays**: skipped, and warned about once per worker with the first
+    lines quoted, cut to 120 bytes and escaped;
+  - a line naming the task, or naming `"unknown"` — the worker's sentinel for a
+    task line it could not read (FND-060, FND-096) — is the task's answer; one
+    task in flight makes `"unknown"` unambiguous, and a matcher that skipped it
+    would wait out the deadline on a corrupt task and evict a healthy worker;
+  - a line naming the task that is not a readable result, a solved (`ok`)
+    result for `"unknown"`, and a solved result whose `frequency_hz` is not the
+    task's are the task's **unusable** answer: a task fault, the worker stays
+    (the frequency is compared exactly — the worker echoes the `f64` it was sent;
+    an `error` result is not compared, as it carries `0.0` for an unreadable
+    task);
+  - 64 strays for one task (`MAX_STRAY_LINES`) is a worker fault, as a timeout
+    is: evicted, and the task takes a strike. The task's one deadline covers the
+    whole read, and a stray past it ends the wait; the controller queues at most
+    65 unread lines per worker, so a worker that writes without end waits on
+    the controller instead of filling its memory.
+
+  The CLI then checks each solved point's `frequency_hz` against the frequency
+  it asked for, a tripwire behind the rule above.
 
 ---
 

@@ -76,6 +76,20 @@ Verify the connection is non-interactive (no passphrase prompt):
 ssh -i ~/.ssh/fnec_worker_ed25519 dc0sk@worker1.example.com fnec --version
 ```
 
+**Keep non-interactive shell startup silent on stdout.** The worker's stdout is
+the protocol channel, and over SSH it also carries whatever the login shell
+prints before running `fnec` — an `echo` in `~/.bashrc`, a `/etc/profile.d`
+script. The controller pairs each answer with its task, so such a line cannot
+move a number, but it is skipped and reported once per host:
+
+```text
+warning: worker 'ssh:worker1.example.com' wrote 1 line that was not the answer to task 'na-0' before answering it; ignored: "Welcome!". Keep the worker host's non-interactive shell startup silent on stdout (docs/worker-deployment.md)
+```
+
+Check with `ssh dc0sk@worker1.example.com true | od -c`: it must print nothing.
+Guard an interactive greeting with `[[ $- == *i* ]]`, or send it to stderr. A
+host that writes 64 such lines for one task is removed from the pool (FND-326).
+
 ---
 
 ## `hosts.toml` Configuration

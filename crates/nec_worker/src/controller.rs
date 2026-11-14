@@ -58,7 +58,9 @@ pub enum DispatchError {
     /// A result that fails to deserialise belongs here, not in `Worker`: the
     /// protocol is line-framed and the parse happens after a COMPLETE line has
     /// been read, so the stream is still in sync and the next task will be
-    /// answered normally.
+    /// answered normally. In sync is a claim about FRAMING; PAIRING is a second
+    /// one, made by reading to the line that names the task (FND-326) — only a
+    /// line naming this task, or `"unknown"`, can be its unusable answer.
     Task(String),
 }
 
@@ -126,21 +128,25 @@ impl LocalWorkerHandle {
         self.deadline = deadline;
     }
 
-    /// Send a task to the worker and block until the result is received.
+    /// Send a task to the worker and block until its answer is received.
     ///
-    /// The result is matched to the task by `task_id`; if the worker sends a
-    /// result with a different `task_id` it is returned as-is (the protocol
-    /// guarantees one result per task in the single-in-flight model).
+    /// The answer is the line that names the task by `task_id` (or the
+    /// protocol's `"unknown"`); anything else the worker writes first is skipped
+    /// with a warning — see [`crate::pipe::WorkerPipe::answer_to`] (FND-326).
+    /// This doc said so for releases while the code took the next line.
     pub fn dispatch(&mut self, task: &TaskMessage) -> Result<TaskResult, DispatchError> {
         // Our own request failed to serialise: nothing has been sent, so the
         // worker is untouched and this is the task's problem.
         let json = serde_json::to_string(task).map_err(|e| DispatchError::Task(e.to_string()))?;
-        let line = self.pipe.exchange(&json, self.deadline)?;
-        // A COMPLETE line was read, so the stream is in sync whatever the line
-        // says. The worker is healthy; this one result is unusable.
-        let result: TaskResult = serde_json::from_str(line.trim())
-            .map_err(|e| DispatchError::Task(format!("unreadable result from worker: {e}")))?;
-        Ok(result)
+        let start = std::time::Instant::now();
+        self.pipe.send(&json, self.deadline)?;
+        self.pipe
+            .answer_to(task, &self.label(), start, self.deadline)
+    }
+
+    /// The label the pool and its warnings name this worker by.
+    pub fn label(&self) -> String {
+        "local".to_string()
     }
 
     /// Send the shutdown command and give the subprocess a bounded grace period.
