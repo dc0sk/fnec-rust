@@ -15,6 +15,20 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Fixed
+
+- **The controller's read of a worker's answer is bounded** (FND-331). The
+  distributed controller read each worker's stdout with an unbounded `lines()`,
+  so a worker (local or over `--hosts`) writing a line without end grew one
+  string until the controller aborted on out-of-memory; the 15-minute deadline
+  bounded the wait, not the allocation. It now reads with the same bounded,
+  draining read the worker has used on its own stdin since FND-096: a line past
+  the protocol's 4 MiB maximum is refused without being allocated, its tail is
+  drained so the next line is read as itself, and the task fails with "the
+  worker's result line exceeds the 4194304-byte protocol maximum" while the
+  worker stays in the pool. `MAX_LINE_BYTES` and that read now live once, in
+  `nec_worker::protocol`, for both ends.
+
 ## [0.26.0] — 2026-11-01 — As NEC-2 reads it
 
 ### Added
