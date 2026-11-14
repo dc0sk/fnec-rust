@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/nec4-support.md
 status: living
-last_updated: 2026-10-13
+last_updated: 2026-11-14
 ---
 
 # NEC-4 Support Boundary

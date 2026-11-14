@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/json-output-schema.md
 status: living
-last_updated: 2026-10-29
+last_updated: 2026-11-14
 ---
 
 # fnec JSON Output Schema (v1)

@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph9-chk-006-sommerfeld-ground.md
 status: living
-last_updated: 2026-09-26
+last_updated: 2026-11-14
 ---
 
 # PH9-CHK-006: accurate near-ground impedance

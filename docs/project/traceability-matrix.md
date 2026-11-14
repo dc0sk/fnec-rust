@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/traceability-matrix.md
 status: living
-last_updated: 2026-10-19
+last_updated: 2026-11-14
 ---
 
 # Traceability matrix

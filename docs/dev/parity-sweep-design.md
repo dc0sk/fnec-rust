@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/dev/parity-sweep-design.md
 status: living
-last_updated: 2026-10-07
+last_updated: 2026-11-14
 ---
 
 # Parity sweep — design (draft for review)

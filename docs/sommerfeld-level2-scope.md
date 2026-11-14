@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/sommerfeld-level2-scope.md
 status: living
-last_updated: 2026-10-13
+last_updated: 2026-11-14
 ---
 
 # Sommerfeld–Norton "Level 2" — scoping the real remaining gap (BL-IMPR-015)
