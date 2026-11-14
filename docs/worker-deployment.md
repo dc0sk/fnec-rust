@@ -80,7 +80,7 @@ ssh -i ~/.ssh/fnec_worker_ed25519 dc0sk@worker1.example.com fnec --version
 the protocol channel, and over SSH it also carries whatever the login shell
 prints before running `fnec` — an `echo` in `~/.bashrc`, a `/etc/profile.d`
 script. The controller pairs each answer with its task, so such a line cannot
-move a number, but it is skipped and reported once per host:
+move a number, but it is skipped and reported once per connection (again after a reconnect):
 
 ```text
 warning: worker 'ssh:worker1.example.com' wrote 1 line that was not the answer to task 'na-0' before answering it; ignored: "Welcome!". Keep the worker host's non-interactive shell startup silent on stdout (docs/worker-deployment.md)

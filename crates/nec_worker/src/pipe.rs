@@ -40,7 +40,7 @@
 //! impedance of the sweep printed against the next frequency, with no word.
 //! [`WorkerPipe::answer_to`] reads until a line names the waiting task: a line
 //! that is not a result, a result naming another task and an over-long line are
-//! strays — skipped, warned about once per worker, and capped. A worker's
+//! strays — skipped, warned about once per connection, and capped. A worker's
 //! `"unknown"` ([`UNKNOWN_TASK_ID`]) answers the waiting task, because one task
 //! is in flight per worker and that is the protocol's word for "I could not read
 //! it". A solved result must also carry the task's `frequency_hz`: the id names
@@ -123,7 +123,14 @@ pub const MAX_STRAY_LINES: usize = 64;
 /// minute with the cap removed (FND-326's sabotage, stopped by `ulimit -v`), and
 /// with the cap in place still queued as fast as it wrote until the eviction. A
 /// bounded channel makes the reader wait, and the child with it: a healthy
-/// worker writes one line per task, so it never comes near this.
+/// worker writes one line per task, so it never comes near this (FND-356).
+///
+/// Why 65: a task the cap tolerates reads at most `MAX_STRAY_LINES - 1` strays
+/// and then its answer, so a queue of `MAX_STRAY_LINES + 1` — the +1 is the
+/// answer — never makes a worker the cap would keep wait on the controller.
+///
+/// Worst case, each line at the protocol maximum: 65 × [`MAX_LINE_BYTES`] ≈
+/// 260 MiB per worker, bounded, where the unbounded channel had no bound.
 const QUEUED_LINES: usize = MAX_STRAY_LINES + 1;
 
 /// How many stray lines the warning quotes.
@@ -274,7 +281,8 @@ pub struct WorkerPipe {
     poisoned: bool,
     /// Every stray line this pipe has skipped — the tripwire a test reads.
     strays: usize,
-    /// Whether this worker's strays have been warned about yet: once per worker.
+    /// Whether this worker's strays have been warned about yet: once per
+    /// connection, since a reconnect builds a fresh pipe.
     warned: bool,
     /// Every line the reader thread has handed over — the tripwire for the
     /// queue's bound.
@@ -635,6 +643,19 @@ mod tests {
         .expect("serialise")
     }
 
+    /// Poll until the reader has handed over `n` lines, at most 5 s.
+    fn wait_until_queued(pipe: &WorkerPipe, n: usize) {
+        let start = Instant::now();
+        while pipe.queued_lines() < n {
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "the child queued {} of {n} lines in 5 s",
+                pipe.queued_lines()
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
     /// A child that prints `lines`, one per line, then waits: the answer is read
     /// without a task being sent, so nothing about the child's input matters.
     fn printing(lines: &[String]) -> WorkerPipe {
@@ -784,11 +805,15 @@ mod tests {
     #[test]
     fn the_reader_queues_a_bounded_number_of_lines() {
         let mut pipe = pipe_to("exec yes banner");
-        std::thread::sleep(Duration::from_millis(500));
+        // Polled, not slept: a child that had not started writing would leave
+        // the count at 0 and pass on any build.
+        wait_until_queued(&pipe, QUEUED_LINES);
+        // Settle: an unbounded reader keeps going past the bound.
+        std::thread::sleep(Duration::from_millis(100));
         let queued = pipe.queued_lines();
         pipe.kill();
-        assert!(
-            queued <= QUEUED_LINES,
+        assert_eq!(
+            queued, QUEUED_LINES,
             "{queued} lines queued, bound {QUEUED_LINES}"
         );
     }
@@ -801,7 +826,9 @@ mod tests {
         let mut lines: Vec<String> = (0..10).map(|i| format!("junk {i}")).collect();
         lines.push(ok_line("t1", 14.2e6));
         let mut pipe = printing(&lines);
-        std::thread::sleep(Duration::from_millis(300));
+        // Every line queued before the wait starts (polled, not slept): with a
+        // line missing, a build without the check also times out, on the gap.
+        wait_until_queued(&pipe, lines.len());
         let start = Instant::now() - Duration::from_millis(200);
         let r = pipe.answer_to(
             &task("t1", 14.2e6),

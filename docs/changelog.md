@@ -37,9 +37,8 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   bounded the wait, not the allocation. It now reads with the same bounded,
   draining read the worker has used on its own stdin since FND-096: a line past
   the protocol's 4 MiB maximum is refused without being allocated, its tail is
-  drained so the next line is read as itself, and the task fails with "the
-  worker's result line exceeds the 4194304-byte protocol maximum" while the
-  worker stays in the pool. `MAX_LINE_BYTES` and that read now live once, in
+  drained so the next line is read as itself, and the line is skipped as a
+  stray, with a warning, while the worker stays in the pool (FND-326). `MAX_LINE_BYTES` and that read now live once, in
   `nec_worker::protocol`, for both ends.
 - **A distributed sweep's answers are paired with the frequencies they answer**
   (FND-326). The controller took the next line on a worker's stdout as the
@@ -55,7 +54,8 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   exits 0 with the right numbers. A solved answer whose `frequency_hz` is not
   the task's fails that point and keeps the worker; a worker that writes 64
   lines that answer nothing for one task is removed from the pool, and the
-  controller holds at most 65 unread lines from a worker however fast it writes.
+  controller holds at most 65 unread lines from a worker however fast it writes
+  (FND-356).
   The CLI also checks each point's frequency against the one it asked for.
 
 ## [0.26.0] — 2026-11-01 — As NEC-2 reads it

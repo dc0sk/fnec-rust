@@ -62,7 +62,7 @@ only network socket.
 `stdout` is the protocol channel, and over SSH it is shared with whatever the
 remote login shell prints before `exec`ing the worker — a `.bashrc` `echo`, a
 `/etc/profile.d` script. That is tolerated: a line that is not the answer to
-the task in flight is skipped, and the controller warns once per worker, naming
+the task in flight is skipped, and the controller warns once per connection, naming
 it and quoting the first lines (§3.3). Keep non-interactive shell startup silent
 on stdout (`docs/worker-deployment.md`); a worker that writes 64 such lines for
 one task is evicted as not speaking the protocol (FND-326).
@@ -266,7 +266,7 @@ draining its pool.
   The rule, line by line:
   - a line that is not a result (a shell banner, junk), a result naming another
     task (a late answer nobody waits for), and a line past the 4 MiB maximum
-    are **strays**: skipped, and warned about once per worker with the first
+    are **strays**: skipped, and warned about once per worker connection with the first
     lines quoted, cut to 120 bytes and escaped;
   - a line naming the task, or naming `"unknown"` — the worker's sentinel for a
     task line it could not read (FND-060, FND-096) — is the task's answer; one
