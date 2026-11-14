@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/path-inventory.md
 status: living
-last_updated: 2026-10-07
+last_updated: 2026-11-14
 ---
 
 # Path inventory for cross-cutting concerns
@@ -227,7 +227,7 @@ reads it, and none counts or iterates cards to decide a drive.
 | 8 | CLI feedpoint rows (`build_feedpoint_rows`, `feedpoint_abs_segments`) | yes | `the_last_type0_card_drives_the_segment_as_nec2c` |
 | 9 | Input power (`feedpoint_input_power`) for gain and POWER BUDGET | yes | `power_and_gain_follow_the_applied_drive_not_the_cards`; GUI `two_ex_cards_on_one_segment_drive_it_with_the_last_on_both_gui_paths` |
 | 10 | Worker, GUI, bindings single-feed pricing (`v_vec` at the first card's segment) | yes | `a_worker_feed_row_is_priced_from_the_drive_the_solve_applied`; bindings `two_ex_cards_on_one_segment_are_one_row_with_a_warning` |
-| 11 | Sommerfeld one-feed test (`correction_applies`) | yes | `a_doubly_fed_single_feed_still_takes_the_sommerfeld_correction` |
+| 11 | Sommerfeld one-feed test (`correction_verdict`, FND-325) | yes | `a_doubly_fed_single_feed_still_takes_the_sommerfeld_correction` |
 | 12 | `--hosts` multi-feed refusal (`more_than_one_feedpoint`) | yes | `a_doubly_fed_single_feed_is_one_distributed_feedpoint_with_its_warning`; `more_than_one_feedpoint_counts_the_feedpoint_rows` |
 | 13 | FND-309 source lookup (`source_abs_seg`) | yes | `the_input_impedance_print_finds_the_source_by_its_segment` |
 | 14 | Feed caveats (`feedpoint_at_junction_warnings`, `free_end_feed_warnings`, `mpie_low_ground_measured`) | yes | one per driven segment, through the owner |

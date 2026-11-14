@@ -179,7 +179,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=982 --> **982** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=988 --> **988** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -190,7 +190,7 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 330 | residual caveat threshold, the `ResidualKind` predicate's every arm and the shared NaN-is-worst reduction (FND-302), convergence (the settle rule), refine (the finer mesh's map), lnetwork (L-network matching, with a proptest that every network presents its target), loads, corner term, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
+| `nec_solver` | 331 | residual caveat threshold, the `ResidualKind` predicate's every arm and the shared NaN-is-worst reduction (FND-302), convergence (the settle rule), refine (the finer mesh's map), lnetwork (L-network matching, with a proptest that every network presents its target), loads, corner term, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
 | `nec_worker` | 100 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 103 | the FND-302 caveat firing through the single solve and the sweep stream, app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 58 | main, match_cmd (impedance spellings, text and JSON blocks), exec_profile, kernel (the PAR-011 kernel path, CRLF and warnings, its failure), sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
@@ -200,11 +200,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 8 | lib 7, constants 1 (μ0 ε0 c² = 1, FND-297 b) |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=746 --> **746** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=747 --> **747** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1735 --> **1735** = 746 unit + 982 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1742 --> **1742** = 747 unit + 988 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
