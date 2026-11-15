@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/requirements.md
 status: living
-last_updated: 2026-10-19
+last_updated: 2026-11-15
 ---
 
 # Requirements

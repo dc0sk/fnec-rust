@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/roadmap.md
 status: living
-last_updated: 2026-11-11
+last_updated: 2026-11-15
 ---
 
 # Roadmap
