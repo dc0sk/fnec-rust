@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/distributed-execution-design.md
 status: living
-last_updated: 2026-09-27
+last_updated: 2026-11-14
 ---
 
 # Distributed Execution Design
@@ -65,6 +65,14 @@ Each message is a single UTF-8 JSON object followed by a newline (`\n`).
 Messages are never split across lines.  The maximum message size is 4 MiB;
 larger payloads (e.g. bulk far-field patterns) are chunked into multiple result
 messages tagged with a `chunk_seq` field.
+
+The 4 MiB maximum (`MAX_LINE_BYTES`, newline included) is enforced on both ends
+by one bounded read, `nec_worker::protocol::read_bounded_line`: the read itself is
+capped, so an over-long line is never allocated, and its tail is drained to the
+newline so the next line is read as itself. The worker answers an over-long task
+line with a `resource_exhausted` error result (FND-096); the controller fails the
+task whose answer was over-long as a task fault and keeps the worker in the pool,
+the stream being back in sync (FND-331).
 
 ### Reconnect policy
 

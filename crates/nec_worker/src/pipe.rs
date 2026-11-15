@@ -21,7 +21,17 @@
 //! One thread per WORKER, not per dispatch. A thread per dispatch would leak one
 //! for every wedged worker; this one exits on its own, because a timeout evicts
 //! the handle, `Drop` kills the child, and killing the child closes the pipe,
-//! which ends the thread's `read_line` at EOF.
+//! which ends the thread's read at EOF.
+//!
+//! **The read is bounded (FND-331).** The reader thread used `lines()`, which
+//! grows a `String` until the line ends: a worker writing an endless line
+//! aborted the controller on out-of-memory, the deadline bounding the wait but
+//! not the allocation. It now calls the protocol's one bounded read,
+//! [`read_bounded_line`] — the worker's own side's read since FND-096 — and
+//! pushes a [`Line`]: the text, or `TooLong` for a line past
+//! [`MAX_LINE_BYTES`], whose tail has been drained so the stream is back in
+//! sync. A `TooLong` is therefore a `Task` fault, not a `Worker` one (the
+//! FND-117 rule: a complete line came back; one bad line is not a dead host).
 //!
 //! **And a writer thread (FND-244).** A child that stops draining stdin blocked
 //! the task write forever once the line passed the pipe buffer (64 KiB here; a
@@ -43,11 +53,12 @@
 //! poisoned — the stuck job still heads the writer's queue, and a later line
 //! would wait behind it.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufReader, Write};
 use std::process::Child;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
 
+use crate::protocol::{read_bounded_line, BoundedRead, MAX_LINE_BYTES};
 use crate::DispatchError;
 
 /// How long to wait for a worker's answer to one solve task.
@@ -115,6 +126,15 @@ impl From<SendError> for DispatchError {
     }
 }
 
+/// One line from the worker, as the reader thread hands it over.
+#[derive(Debug)]
+enum Line {
+    /// A complete line, without its newline.
+    Text(String),
+    /// A line past [`MAX_LINE_BYTES`]: not kept, its tail drained.
+    TooLong,
+}
+
 /// One line for the writer thread, and where to say how the write went.
 struct Job {
     line: String,
@@ -127,7 +147,7 @@ struct Job {
 pub struct WorkerPipe {
     child: Child,
     jobs: Sender<Job>,
-    lines: Receiver<String>,
+    lines: Receiver<Line>,
     poisoned: bool,
 }
 
@@ -156,16 +176,31 @@ impl WorkerPipe {
         });
         let (tx, lines) = mpsc::channel();
         std::thread::spawn(move || {
-            let reader = BufReader::new(stdout);
-            for line in reader.lines() {
-                match line {
-                    // A closed receiver means the handle is gone; stop reading.
-                    Ok(l) => {
-                        if tx.send(l).is_err() {
-                            return;
+            let mut reader = BufReader::new(stdout);
+            let mut buf = Vec::new();
+            loop {
+                // Bounded, not `lines()` (FND-331, see the module doc).
+                let item = match read_bounded_line(&mut reader, &mut buf) {
+                    Ok(BoundedRead::Eof) | Err(_) => return,
+                    Ok(BoundedRead::TooLong) => Line::TooLong,
+                    Ok(BoundedRead::Line) => {
+                        // What `lines()` delivered: the line without "\n" or
+                        // "\r\n", and a line that is not UTF-8 ends the read.
+                        if buf.last() == Some(&b'\n') {
+                            buf.pop();
+                            if buf.last() == Some(&b'\r') {
+                                buf.pop();
+                            }
+                        }
+                        match String::from_utf8(std::mem::take(&mut buf)) {
+                            Ok(l) => Line::Text(l),
+                            Err(_) => return,
                         }
                     }
-                    Err(_) => return,
+                };
+                // A closed receiver means the handle is gone; stop reading.
+                if tx.send(item).is_err() {
+                    return;
                 }
             }
         });
@@ -215,13 +250,18 @@ impl WorkerPipe {
     /// deadline is divided between its write and its read.
     ///
     /// A timeout is a WORKER fault: the peer took the whole task and did not
-    /// answer, so it is not usable, whatever the task's own merits.
+    /// answer, so it is not usable, whatever the task's own merits. A line past
+    /// the protocol maximum is a TASK fault: it was drained, so the stream is in
+    /// sync and the worker stays (FND-331, FND-117).
     pub fn recv_by(&mut self, start: Instant, deadline: Duration) -> Result<String, DispatchError> {
         match self
             .lines
             .recv_timeout(deadline.saturating_sub(start.elapsed()))
         {
-            Ok(line) => Ok(line),
+            Ok(Line::Text(line)) => Ok(line),
+            Ok(Line::TooLong) => Err(DispatchError::Task(format!(
+                "the worker's result line exceeds the {MAX_LINE_BYTES}-byte protocol maximum"
+            ))),
             // The whole deadline, not what was left of it for the read.
             Err(RecvTimeoutError::Timeout) => Err(DispatchError::Worker(format!(
                 "worker did not answer within {:.1}s",
@@ -352,6 +392,52 @@ mod tests {
         let r = pipe.send(&line, Duration::from_secs(10));
         assert!(matches!(&r, Err(SendError::Broken(_))), "{r:?}");
         assert!(r.unwrap_err().reconnects());
+    }
+
+    /// FND-331: an answer line past the protocol maximum is refused, not grown,
+    /// and the next real line is still read — FND-096's worker-side test,
+    /// mirrored on the controller's side. Without the bound the 5 MiB line comes
+    /// back as text; without the drain its tail is read as the next line.
+    #[test]
+    fn an_over_long_answer_is_refused_and_the_next_line_is_still_read() {
+        let over = MAX_LINE_BYTES as usize + MAX_LINE_BYTES as usize / 4;
+        let mut pipe = pipe_to(&format!(
+            "head -c {over} /dev/zero | tr '\\0' x; echo; echo good; exec sleep 300"
+        ));
+        let deadline = Duration::from_secs(60);
+        let first = pipe.recv_by(Instant::now(), deadline);
+        let second = pipe.recv_by(Instant::now(), deadline);
+        pipe.kill();
+        match &first {
+            Err(DispatchError::Task(m)) => assert!(m.contains("protocol maximum"), "{m}"),
+            Err(e) => panic!("an over-long line must be a Task fault, got {e:?}"),
+            Ok(l) => panic!(
+                "an over-long line was delivered as text ({} bytes)",
+                l.len()
+            ),
+        }
+        assert_eq!(
+            second.as_deref().ok(),
+            Some("good"),
+            "the line after the over-long one must still be read: {second:?}"
+        );
+    }
+
+    /// The control on the bound's other side: a line of exactly the maximum,
+    /// newline included, is delivered whole — the bound refuses only what is
+    /// past it.
+    #[test]
+    fn an_answer_at_the_maximum_is_delivered() {
+        let text = MAX_LINE_BYTES as usize - 1;
+        let mut pipe = pipe_to(&format!(
+            "head -c {text} /dev/zero | tr '\\0' x; echo; exec sleep 300"
+        ));
+        let r = pipe.recv_by(Instant::now(), Duration::from_secs(60));
+        pipe.kill();
+        match r {
+            Ok(l) => assert_eq!(l.len(), text),
+            Err(e) => panic!("a line at the maximum must be delivered: {e:?}"),
+        }
     }
 
     /// Only a broken connection reconnects; a host that stopped reading has
