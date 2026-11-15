@@ -222,7 +222,7 @@ pub fn horizontal_ground_z_correction(
 
 /// Whether the segments form one straight line wholly above `z = 0`: every
 /// direction parallel, every midpoint on one line (FND-206), every midpoint above
-/// ground. The geometry half of [`correction_applies`], and the same test
+/// ground. The geometry half of [`correction_verdict`], and the same test
 /// [`ground_z_correction`] makes — one function, so the two cannot disagree.
 fn one_straight_line_above_ground(midpoints: &[[f64; 3]], directions: &[[f64; 3]]) -> bool {
     const TOL: f64 = 1e-6;
@@ -244,10 +244,101 @@ fn one_straight_line_above_ground(midpoints: &[[f64; 3]], directions: &[[f64; 3]
     collinear(midpoints, axis)
 }
 
-/// Whether `--ground-solver sommerfeld` corrects this deck's feedpoint impedance:
-/// one feed (a voltage or current source — the correction is a one-port quantity,
-/// FND-206), no `TL`/`NT` network (whose branch current is not antenna current,
-/// FND-208), and one straight wire above ground.
+/// The longest a segment may be, in multiples of its midpoint's height, for the
+/// correction's reaction sum to be resolved (FND-325).
+///
+/// The sum samples the reflected kernel once per segment pair, midpoint to
+/// midpoint. Over a ground `h` below the wire that kernel peaks at `ρ = 0` and
+/// cancels against a negative lobe out to `ρ ≈ 5h`, its line integral one part in
+/// ~5000 of its peak times `2h`: a segment longer than its height keeps every
+/// self-pair's peak and samples the lobe nowhere. Measured against nec2c 1.3.1 on
+/// a horizontal λ/2 dipole (29.9 MHz and 14.2 MHz, `GN 2` 13 / 0.005): ≤ 2.5 % at
+/// a ratio of 1.0, 0.5 % at 1.2, 18–93 % at 1.6, and 2× to 500× wrong from 2 up —
+/// frequency-free, as a quasi-static defect is. The tilted wire's grid has the same
+/// defect (X sign-wrong at a 3° tilt 0.02 m up, ratio 9.1) and takes the same bound.
+pub const MAX_SEGMENT_TO_HEIGHT: f64 = 1.0;
+
+/// Below this height in wavelengths the correction applies but is outside the band
+/// it is measured accurate in (FND-325, M3): it is a first-order reaction over the
+/// uncorrected currents, and with every quadrature resolved it reads the
+/// resistance 5–20 % low at 0.002–0.01 λ against nec2c on a λ/2 dipole and a
+/// 1.5 λ wire. The MPIE is within 1–3 % there.
+pub const MEASURED_BAND_WAVELENGTHS: f64 = 0.01;
+
+/// Whether, and how, `--ground-solver sommerfeld` corrects this deck's feedpoint
+/// impedance — the one answer the solve, its caveat, the low-ground advice and the
+/// `diag:` line all read (FND-217, FND-325), so the four cannot drift.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CorrectionVerdict {
+    /// The correction applies and the deck is inside its measured band.
+    Applies,
+    /// The correction applies, but the structure's lowest point is below
+    /// [`MEASURED_BAND_WAVELENGTHS`]: the result carries a caveat, and the
+    /// low-ground warning does not recommend it.
+    AppliesBelowMeasuredBand {
+        /// The lowest point's height, in wavelengths.
+        height_wavelengths: f64,
+    },
+    /// A segment is longer than [`MAX_SEGMENT_TO_HEIGHT`] times its midpoint's
+    /// height: the reaction sum is unresolved there, and the correction declines.
+    /// The segment named is the one with the largest ratio.
+    Unresolved {
+        /// Its tag.
+        tag: u32,
+        /// Its segment number within the tag.
+        segment: u32,
+        /// Its length in metres.
+        length: f64,
+        /// Its midpoint's height in metres.
+        height: f64,
+    },
+    /// Not exactly one driven segment: the correction is a one-port quantity
+    /// (FND-206). A receive deck, with none, lands here.
+    NotOnePort,
+    /// A `TL`/`NT` network: the feed current carries the network branch, which is
+    /// not antenna current (FND-208).
+    Network,
+    /// Not one straight wire wholly above ground (bent, mixed or parallel wires).
+    NotStraight,
+}
+
+impl CorrectionVerdict {
+    /// Whether the solve adds the correction.
+    pub fn applies(self) -> bool {
+        matches!(self, Self::Applies | Self::AppliesBelowMeasuredBand { .. })
+    }
+
+    /// Whether a caveat may recommend the correction as the cure: where it
+    /// applies inside its measured band, and nowhere else.
+    pub fn recommendable(self) -> bool {
+        self == Self::Applies
+    }
+}
+
+/// The segment whose length is the largest multiple of its midpoint's height,
+/// when that multiple exceeds [`MAX_SEGMENT_TO_HEIGHT`] — `(tag, segment, length,
+/// height)`. Over the solve's own segments: the correction sums over them.
+fn coarsest_segment_over_ground(segs: &[crate::Segment]) -> Option<(u32, u32, f64, f64)> {
+    segs.iter()
+        .filter(|s| s.midpoint[2] > 0.0)
+        .map(|s| (s.length / s.midpoint[2], s))
+        .fold(
+            None,
+            |worst: Option<(f64, &crate::Segment)>, (r, s)| match worst {
+                Some((w, _)) if w >= r => worst,
+                _ => Some((r, s)),
+            },
+        )
+        .filter(|(r, _)| *r > MAX_SEGMENT_TO_HEIGHT)
+        .map(|(_, s)| (s.tag, s.tag_index, s.length, s.midpoint[2]))
+}
+
+/// Whether `--ground-solver sommerfeld` corrects this deck's feedpoint impedance
+/// at `freq_hz`, and whether inside its measured band: one feed (a voltage or
+/// current source — the correction is a one-port quantity, FND-206), no `TL`/`NT`
+/// network (whose branch current is not antenna current, FND-208), one straight
+/// wire above ground, and every segment no longer than its midpoint's height
+/// (FND-325).
 ///
 /// The CLI's solve gates the correction on exactly this, and the low-ground caveat
 /// names the remedy on exactly this, so the advice cannot outrun the cure
@@ -256,18 +347,59 @@ fn one_straight_line_above_ground(midpoints: &[[f64; 3]], directions: &[[f64; 3]
 /// a valid deck. It holds for `GN 0` as for `GN 2`: fnec models both as finite
 /// ground with the scalar reflection coefficient, and the correction adds the
 /// surface wave to either (`docs/cli-guide.md`).
-pub fn correction_applies(deck: &nec_model::deck::NecDeck, segs: &[crate::Segment]) -> bool {
+pub fn correction_verdict(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[crate::Segment],
+    freq_hz: f64,
+) -> CorrectionVerdict {
     use nec_model::card::Card;
     let midpoints: Vec<[f64; 3]> = segs.iter().map(|s| s.midpoint).collect();
     let directions: Vec<[f64; 3]> = segs.iter().map(|s| s.direction).collect();
     // One driven SEGMENT: two `EX` cards on one segment are one feed (FND-305),
     // and counting cards declined the correction for a single feed spelt twice.
-    crate::driven_segments(deck, segs).is_ok_and(|d| d.len() == 1)
-        && !deck
-            .cards
-            .iter()
-            .any(|c| matches!(c, Card::Tl(_) | Card::Nt(_)))
-        && one_straight_line_above_ground(&midpoints, &directions)
+    if !crate::driven_segments(deck, segs).is_ok_and(|d| d.len() == 1) {
+        return CorrectionVerdict::NotOnePort;
+    }
+    if deck
+        .cards
+        .iter()
+        .any(|c| matches!(c, Card::Tl(_) | Card::Nt(_)))
+    {
+        return CorrectionVerdict::Network;
+    }
+    if !one_straight_line_above_ground(&midpoints, &directions) {
+        return CorrectionVerdict::NotStraight;
+    }
+    if let Some((tag, segment, length, height)) = coarsest_segment_over_ground(segs) {
+        return CorrectionVerdict::Unresolved {
+            tag,
+            segment,
+            length,
+            height,
+        };
+    }
+    let lowest = segs
+        .iter()
+        .flat_map(|s| [s.start[2], s.end[2]])
+        .fold(f64::INFINITY, f64::min);
+    if freq_hz > 0.0 && lowest.is_finite() {
+        let height_wavelengths = lowest * freq_hz / C0;
+        if height_wavelengths < MEASURED_BAND_WAVELENGTHS {
+            return CorrectionVerdict::AppliesBelowMeasuredBand { height_wavelengths };
+        }
+    }
+    CorrectionVerdict::Applies
+}
+
+/// The caveat a correction outside its measured band carries, in one place so the
+/// main command and `fnec converge` say the same thing (FND-325).
+pub fn below_measured_band_caveat(height_wavelengths: f64) -> String {
+    format!(
+        "the antenna is {height_wavelengths:.4} λ above ground, below the {MEASURED_BAND_WAVELENGTHS} λ \
+         the correction is measured accurate to: it is first-order in the current and reads \
+         R 5–20 % low at 0.002–0.01 λ (measured against nec2c on a λ/2 dipole and a 1.5 λ \
+         wire); `--solver mpie` is within 1–3 % there (FND-325)"
+    )
 }
 
 /// Surface-wave ΔZ correction for **any straight wire** over finite ground
@@ -1141,7 +1273,7 @@ mod tests {
             let src = format!("{body}GE 1\nGN 2 0 0 0 13 0.005\nFR 0 1 0 0 14.2 0\nEN\n");
             let deck = nec_parser::parse(&src).expect("parse").deck;
             let segs = crate::build_geometry(&deck).expect("geometry");
-            correction_applies(&deck, &segs)
+            correction_verdict(&deck, &segs, 14.2e6) == CorrectionVerdict::Applies
         };
         let dipole = "GW 1 21 -5.28 0 0.6 5.28 0 0.6 .001\n";
         assert!(
@@ -1180,6 +1312,78 @@ mod tests {
         );
         // A wire touching finite ground never reaches this: it is refused as buried
         // geometry first. (The test is on midpoints, so it would say yes.)
+    }
+
+    /// The mesh and height halves of the verdict (FND-325), on the decks the CLI
+    /// gates measure against nec2c (`sommerfeld_resolution_bound.rs`).
+    #[test]
+    fn the_verdict_declines_a_segment_longer_than_its_height_and_caveats_below_the_band() {
+        let verdict = |gw: &str, f_mhz: f64| {
+            let src = format!(
+                "{gw}GE 0\nEX 0 1 11 0 1 0\nGN 2 0 0 0 13 0.005\nFR 0 1 0 0 {f_mhz} 0\nEN\n"
+            );
+            let deck = nec_parser::parse(&src).expect("parse").deck;
+            let segs = crate::build_geometry(&deck).expect("geometry");
+            correction_verdict(&deck, &segs, f_mhz * 1e6)
+        };
+        // Δ = 5/21 = 0.238 m at 0.02 m: 11.9× its height.
+        match verdict("GW 1 21 -2.5 0 0.02 2.5 0 0.02 0.001\n", 29.9) {
+            CorrectionVerdict::Unresolved {
+                tag,
+                length,
+                height,
+                ..
+            } => {
+                assert_eq!(tag, 1);
+                assert!(
+                    (length / height - 11.905).abs() < 0.01,
+                    "{length} / {height}"
+                );
+            }
+            other => panic!("expected Unresolved, got {other:?}"),
+        }
+        // The boundary: 0.15 m, 1.59×.
+        assert!(matches!(
+            verdict("GW 1 21 -2.5 0 0.15 2.5 0 0.15 0.001\n", 29.9),
+            CorrectionVerdict::Unresolved { .. }
+        ));
+        // 0.30 m, 0.79×, at 0.030 λ: inside the bound and the band.
+        assert_eq!(
+            verdict("GW 1 21 -2.5 0 0.3 2.5 0 0.3 0.001\n", 29.9),
+            CorrectionVerdict::Applies
+        );
+        // 0.05 m with 189 segments (Δ/H 0.53) is resolved, but 0.005 λ up.
+        match verdict("GW 1 189 -2.5 0 0.05 2.5 0 0.05 0.001\n", 29.9) {
+            CorrectionVerdict::AppliesBelowMeasuredBand { height_wavelengths } => {
+                assert!(
+                    (height_wavelengths - 0.004987).abs() < 1e-5,
+                    "{height_wavelengths}"
+                );
+            }
+            other => panic!("expected AppliesBelowMeasuredBand, got {other:?}"),
+        }
+        // The tilted branch takes the same bound: 5 m at 3°, its low end 0.02 m up.
+        assert!(matches!(
+            verdict("GW 1 21 -2.4966 0 0.02 2.4966 0 0.28168 0.001\n", 29.9),
+            CorrectionVerdict::Unresolved { .. }
+        ));
+        assert!(!CorrectionVerdict::Unresolved {
+            tag: 1,
+            segment: 1,
+            length: 1.0,
+            height: 0.1
+        }
+        .applies());
+        assert!(
+            CorrectionVerdict::AppliesBelowMeasuredBand {
+                height_wavelengths: 0.005
+            }
+            .applies()
+                && !CorrectionVerdict::AppliesBelowMeasuredBand {
+                    height_wavelengths: 0.005
+                }
+                .recommendable()
+        );
     }
 
     const FREQ: f64 = 14.2e6;

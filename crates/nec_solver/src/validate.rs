@@ -1326,7 +1326,7 @@ pub fn hallen_geometry_caveats(
         remedies.mpie,
     ));
     if let Some(w) = low_finite_ground_warning(segs, ground, freq_hz, surface_wave_modelled) {
-        out.push(with_low_ground_remedies(w, deck, segs, remedies));
+        out.push(with_low_ground_remedies(w, deck, segs, freq_hz, remedies));
     }
     out
 }
@@ -1336,11 +1336,15 @@ pub fn hallen_geometry_caveats(
 /// the Sommerfeld correction, which is a feedpoint-only fix 3–5 % from nec2c GN 2;
 /// the MPIE puts the surface wave into the solve and is ~0.5 % (parity sweep,
 /// `R-lowground`). The MPIE is named only where that is measured
-/// ([`mpie_low_ground_measured`]); the Sommerfeld correction only where it applies.
+/// ([`mpie_low_ground_measured`]); the Sommerfeld correction only where it applies
+/// inside its measured band — not where a segment is longer than its height, where
+/// it declines, nor below 0.01 λ, where it reads R 5–20 % low (FND-325). `freq_hz`
+/// is the frequency the caveat is about: a sweep's lowest, its worst case.
 fn with_low_ground_remedies(
     caveat: String,
     deck: &NecDeck,
     segs: &[Segment],
+    freq_hz: f64,
     remedies: Remedies<'_>,
 ) -> String {
     let mpie = remedies
@@ -1348,7 +1352,7 @@ fn with_low_ground_remedies(
         .filter(|_| mpie_compatible_deck(deck) && mpie_low_ground_measured(deck, segs));
     let sommerfeld = remedies
         .sommerfeld
-        .filter(|_| crate::sommerfeld::correction_applies(deck, segs));
+        .filter(|_| crate::sommerfeld::correction_verdict(deck, segs, freq_hz).recommendable());
     match (mpie, sommerfeld) {
         (Some(m), Some(s)) => format!(
             "{caveat} — {m}, which puts the surface wave into the solve itself, or {s}, \
@@ -1399,8 +1403,13 @@ pub fn low_ground_caveat_swept(
     surface_wave_modelled: bool,
     remedies: Remedies<'_>,
 ) -> Option<String> {
+    let worst = freqs_hz
+        .iter()
+        .copied()
+        .filter(|f| *f > 0.0)
+        .fold(f64::INFINITY, f64::min);
     swept_low_ground_caveat(segs, ground, freqs_hz, surface_wave_modelled)
-        .map(|w| with_low_ground_remedies(w, deck, segs, remedies))
+        .map(|w| with_low_ground_remedies(w, deck, segs, worst, remedies))
 }
 
 /// Every `EX` card whose type this build does not recognise.

@@ -651,6 +651,10 @@ pub(crate) fn run(args: &[String]) -> ExitCode {
 
     let mut meshes: Vec<Mesh> = Vec::with_capacity(refined.len());
     let mut failed = false;
+    // Every point's `--ground-solver sommerfeld` outcome with its mesh: a decline
+    // is said once per run, naming the meshes it hit, not once per mesh and
+    // frequency (FND-325) — the rows of a declined mesh are the rcm result.
+    let mut outcomes: Vec<(u32, solve_session::SommerfeldOutcome)> = Vec::new();
     for (factor, segments, r) in refined {
         // Each mesh's stderr carries its own prefix: the caveats are the mesh's
         // own (a one-segment run at 1x is three at 3x), printed for every mesh.
@@ -671,6 +675,7 @@ pub(crate) fn run(args: &[String]) -> ExitCode {
                             .map(|f| (f.tag, f.seg, f.z_in.re, f.z_in.im))
                             .collect();
                         eprintln!("{prefix}{}", p.diag_line);
+                        outcomes.push((factor, p.sommerfeld_outcome));
                         (p.freq_hz, route_of(&p.diag_line), rows)
                     })
                     .collect(),
@@ -684,6 +689,8 @@ pub(crate) fn run(args: &[String]) -> ExitCode {
             }
         }
     }
+
+    warn_sommerfeld_once(&outcomes);
 
     // One row per (frequency, source) of the first mesh, its series across the
     // meshes; the row's tag and segment are the deck's own.
@@ -749,6 +756,32 @@ pub(crate) fn run(args: &[String]) -> ExitCode {
         }
     }
     ExitCode::SUCCESS
+}
+
+/// A study's `--ground-solver sommerfeld` outcomes, said once: the first decline's
+/// sentence with the meshes it hit, and the surface-wave info line (with its
+/// FND-325 caveat) when any mesh applied the correction.
+fn warn_sommerfeld_once(outcomes: &[(u32, solve_session::SommerfeldOutcome)]) {
+    let mut declined: Vec<u32> = Vec::new();
+    let mut first: Option<String> = None;
+    for (factor, o) in outcomes {
+        if let Some(w) = solve_session::sommerfeld_decline_warning(*o) {
+            if !declined.contains(factor) {
+                declined.push(*factor);
+            }
+            first.get_or_insert(w);
+        }
+    }
+    if let Some(w) = first {
+        let meshes: Vec<String> = declined.iter().map(|f| format!("{f}x")).collect();
+        eprintln!(
+            "warning: converge: {w} (declined at mesh {}; those rows are the rcm result)",
+            meshes.join(", ")
+        );
+    }
+    if let Some(info) = solve_session::surface_wave_info_for_run(outcomes.iter().map(|(_, o)| *o)) {
+        eprintln!("{info}");
+    }
 }
 
 /// The main command's solve, its remedies, and this mesh's stderr prefix.

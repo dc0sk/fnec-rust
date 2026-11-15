@@ -248,9 +248,10 @@ pub(super) struct FrequencySolveResult {
     pub(super) min_feed_re: Option<f64>,
     /// Whether the device solved this point (a GPU sweep reports the count).
     pub(super) ran_on_gpu: bool,
-    /// Whether the surface-wave correction reached this point's impedance, so the
-    /// run can say once that V and I are not the corrected solve's (FND-286).
-    pub(super) surface_wave_applied: bool,
+    /// What became of a `--ground-solver sommerfeld` request at this point: the
+    /// run says once that V and I are not the corrected solve's (FND-286), and
+    /// once that a correction below its measured band is caveated (FND-325).
+    pub(super) sommerfeld_outcome: SommerfeldOutcome,
     /// What this point's resolved loads were, for the sweep's aggregate caveat
     /// (FND-209): the deck alone cannot say.
     pub(super) run_loads: nec_solver::validate::RunLoads,
@@ -836,43 +837,146 @@ pub(super) fn negative_resistance_warnings(
 /// diagnostics: `--ground-solver sommerfeld` is silently declined for geometry the
 /// correction does not cover, and a user who asked for the surface wave and did
 /// not get it must be told.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum SommerfeldOutcome {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum SommerfeldOutcome {
     /// Not selected, or not applicable to this solver / ground model.
     NotRequested,
     /// Selected and applied — the reported `Z` includes the surface wave.
     Applied,
+    /// Selected and applied, but below the height the correction is measured
+    /// accurate at ([`nec_solver::sommerfeld::MEASURED_BAND_WAVELENGTHS`]): the
+    /// reported `Z` includes it, with a caveat (FND-325).
+    AppliedBelowMeasuredBand {
+        /// The structure's lowest point, in wavelengths.
+        height_wavelengths: f64,
+    },
     /// Selected over finite ground but declined by the geometry (bent or mixed
     /// wire directions); the reported `Z` is the unchanged scalar-Γ (`rcm`) value.
     Declined,
+    /// Selected over a straight wire, but declined because a segment is longer
+    /// than its height and the correction's reaction sum is unresolved there
+    /// (FND-325); the reported `Z` is the unchanged scalar-Γ (`rcm`) value.
+    DeclinedResolution {
+        tag: u32,
+        segment: u32,
+        length: f64,
+        height: f64,
+    },
     /// Selected over finite ground on a plane-wave receive deck: the correction
     /// is a feedpoint-impedance delta, and a receive solve has no feedpoint, so
     /// its currents are the reflection-coefficient result (FND-170).
     DeclinedReceive,
 }
 
+impl SommerfeldOutcome {
+    /// Whether the reported impedance includes the correction.
+    pub(crate) fn applied(self) -> bool {
+        matches!(self, Self::Applied | Self::AppliedBelowMeasuredBand { .. })
+    }
+
+    /// The outcome the verdict implies before any feed is priced: a request the
+    /// verdict declines is a decline of its kind; one it admits becomes
+    /// `Applied…` only once a correction comes back.
+    fn of_verdict(verdict: nec_solver::sommerfeld::CorrectionVerdict) -> Self {
+        use nec_solver::sommerfeld::CorrectionVerdict as V;
+        match verdict {
+            V::Unresolved {
+                tag,
+                segment,
+                length,
+                height,
+            } => Self::DeclinedResolution {
+                tag,
+                segment,
+                length,
+                height,
+            },
+            _ => Self::Declined,
+        }
+    }
+}
+
+/// What a run whose impedance carries the surface-wave correction is told about
+/// the rest of its report (FND-286, decision D1), and — when the correction ran
+/// below its measured band at any point — the caveat on it (FND-325). `lowest` is
+/// the lowest height in wavelengths among the caveated points.
+pub(crate) fn surface_wave_applied_info(lowest: Option<f64>) -> String {
+    let base = "info: --ground-solver sommerfeld: Z includes the surface-wave correction; V, I, \
+                the currents and the pattern are the reflection-coefficient solve's \
+                (PH9-CHK-006, FND-286)";
+    match lowest {
+        Some(h) => format!(
+            "{base}; {}",
+            nec_solver::sommerfeld::below_measured_band_caveat(h)
+        ),
+        None => base.to_string(),
+    }
+}
+
+/// The run's surface-wave info line over its points' outcomes, or `None` where no
+/// point applied the correction: said once per run, not per point.
+pub(crate) fn surface_wave_info_for_run(
+    outcomes: impl IntoIterator<Item = SommerfeldOutcome>,
+) -> Option<String> {
+    let mut any = false;
+    let mut lowest: Option<f64> = None;
+    for o in outcomes {
+        any |= o.applied();
+        if let SommerfeldOutcome::AppliedBelowMeasuredBand { height_wavelengths } = o {
+            lowest = Some(lowest.map_or(height_wavelengths, |l| l.min(height_wavelengths)));
+        }
+    }
+    any.then(|| surface_wave_applied_info(lowest))
+}
+
 /// PH9-CHK-006: `--ground-solver sommerfeld` covers straight wires only, and used
 /// to decline everything else in silence — leaving the user believing they had the
 /// surface wave when they had the reflection-coefficient result. Say so.
 fn warn_if_sommerfeld_declined(outcome: SommerfeldOutcome) {
-    if outcome == SommerfeldOutcome::DeclinedReceive {
-        eprintln!(
-            "warning: --ground-solver sommerfeld corrects a feedpoint impedance, and a \
+    if let Some(w) = sommerfeld_decline_warning(outcome) {
+        eprintln!("warning: {w}");
+    }
+}
+
+/// The sentence a declined `--ground-solver sommerfeld` request earns, or `None`
+/// where it was not declined. One copy: the main command prints it per point and
+/// `fnec converge` once per run (FND-325).
+pub(crate) fn sommerfeld_decline_warning(outcome: SommerfeldOutcome) -> Option<String> {
+    match outcome {
+        SommerfeldOutcome::DeclinedReceive => Some(
+            "--ground-solver sommerfeld corrects a feedpoint impedance, and a \
              plane-wave receive solve has none; the induced currents use the \
              reflection-coefficient ground model (rcm) — the matrix's normal-incidence \
              image and the wave's own Fresnel reflection (FND-170)"
-        );
-    }
-    if outcome == SommerfeldOutcome::Declined {
-        eprintln!(
-            "warning: --ground-solver sommerfeld covers a single straight wire (collinear \
+                .to_string(),
+        ),
+        SommerfeldOutcome::Declined => Some(
+            "--ground-solver sommerfeld covers a single straight wire (collinear \
              segments, horizontal, vertical or tilted) with one feed and no TL/NT network, \
              and declined this deck (bent, mixed or parallel wires, several feeds, or a \
              network — FND-206, FND-208); the reported feedpoint impedance is the unchanged \
              reflection-coefficient (rcm) result. For the surface \
              wave on bent geometry use --solver mpie, which assembles the reflected kernels \
              into its Z-matrix (PH9-CHK-006 / PH9-CHK-007)"
-        );
+                .to_string(),
+        ),
+        SommerfeldOutcome::DeclinedResolution {
+            tag,
+            segment,
+            length,
+            height,
+        } => Some(format!(
+            "--ground-solver sommerfeld declined this deck: tag {tag} segment {segment} is \
+             {length:.4} m long {height:.4} m above ground, {:.1}× its height, and the \
+             correction's midpoint sum is unresolved where a segment is longer than its \
+             height (FND-325); the reported feedpoint impedance is the unchanged \
+             reflection-coefficient (rcm) result. Re-run with `--solver mpie`, which puts \
+             the surface wave into the solve itself",
+            length / height
+        )),
+        SommerfeldOutcome::NotRequested
+        | SommerfeldOutcome::Applied
+        | SommerfeldOutcome::AppliedBelowMeasuredBand { .. } => None,
     }
 }
 
@@ -926,14 +1030,17 @@ pub(super) fn build_feedpoint_rows(
     // (FND-208). Both decline, and say so, rather than correct wrongly. The test is
     // the one the low-ground caveat names the remedy on, so the two cannot drift
     // (FND-217); the geometry half is also what `ground_z_correction` checks.
+    // FND-325: and every segment no longer than its height, below which the
+    // reaction sum is unresolved; below 0.01 λ it applies with a caveat.
+    let verdict =
+        sommerfeld_ground.map(|_| nec_solver::sommerfeld::correction_verdict(deck, segs, freq_hz));
     let sommerfeld_applicable =
-        sommerfeld_ground.is_some() && nec_solver::sommerfeld::correction_applies(deck, segs);
-    let mut sommerfeld_outcome = if sommerfeld_ground.is_some() {
-        // Downgraded to `Applied` only if a correction actually comes back.
-        SommerfeldOutcome::Declined
-    } else {
-        SommerfeldOutcome::NotRequested
-    };
+        verdict.is_some_and(nec_solver::sommerfeld::CorrectionVerdict::applies);
+    // Upgraded to `Applied…` only if a correction actually comes back.
+    let mut sommerfeld_outcome = verdict.map_or(
+        SommerfeldOutcome::NotRequested,
+        SommerfeldOutcome::of_verdict,
+    );
     let midpoints: Vec<[f64; 3]> = segs.iter().map(|s| s.midpoint).collect();
     let directions: Vec<[f64; 3]> = segs.iter().map(|s| s.direction).collect();
     let lengths: Vec<f64> = segs.iter().map(|s| s.length).collect();
@@ -999,7 +1106,12 @@ pub(super) fn build_feedpoint_rows(
                 sigma,
             ) {
                 z_in += dz;
-                sommerfeld_outcome = SommerfeldOutcome::Applied;
+                sommerfeld_outcome = match verdict {
+                    Some(nec_solver::sommerfeld::CorrectionVerdict::AppliesBelowMeasuredBand {
+                        height_wavelengths,
+                    }) => SommerfeldOutcome::AppliedBelowMeasuredBand { height_wavelengths },
+                    _ => SommerfeldOutcome::Applied,
+                };
             }
         }
 
@@ -1117,6 +1229,9 @@ pub(crate) struct ProbePoint {
     pub(crate) freq_hz: f64,
     pub(crate) feedpoints: Vec<nec_report::FeedpointRow>,
     pub(crate) diag_line: String,
+    /// What became of a `--ground-solver sommerfeld` request here; the caller
+    /// prints its decline, once (FND-325).
+    pub(crate) sommerfeld_outcome: SommerfeldOutcome,
 }
 
 /// Solve a parsed deck for its feedpoints, as a helper route does: the geometry,
@@ -1226,6 +1341,7 @@ pub(crate) fn probe_feedpoints(
             freq_hz,
             feedpoints,
             diag_line: solved.diag_line,
+            sommerfeld_outcome: solved.sommerfeld_outcome,
         });
     }
     // FND-302 once per probe, at its worst point, as the main command does per run.
@@ -1832,7 +1948,7 @@ pub(super) fn solve_frequency_point(
                 laplace_loads,
                 ground,
                 freq_hz,
-                matches!(sommerfeld_outcome, SommerfeldOutcome::Applied),
+                sommerfeld_outcome.applied(),
                 nec_solver::validate::Remedies {
                     mpie: Some(CLI_MPIE_REMEDY),
                     mpie_low_ground: Some(CLI_MPIE_REMEDY),
@@ -1848,7 +1964,10 @@ pub(super) fn solve_frequency_point(
         for w in shown {
             eprintln!("warning: {w}");
         }
-        // Stays here: only this frontend can make the request that gets declined.
+    }
+    // Stays here: only this frontend can make the request that gets declined. A
+    // caller that shows the caveats shows this too, once (`fnec converge`, FND-325).
+    if !matches!(solver_mode, SolverMode::Mpie) && geometry_caveats == GeometryCaveats::PerPoint {
         warn_if_sommerfeld_declined(sommerfeld_outcome);
     }
     let negative_r = negative_resistance_warnings(&rows, deck, segs, solver_mode, run_loads);
@@ -2148,7 +2267,7 @@ pub(super) fn solve_frequency_point(
         run_loads,
         min_feed_re,
         ran_on_gpu,
-        surface_wave_applied: sommerfeld_outcome == SommerfeldOutcome::Applied,
+        sommerfeld_outcome,
     })
 }
 
@@ -2217,8 +2336,11 @@ pub(super) fn decision_record(d: &DecisionInputs<'_>) -> String {
         (GroundModel::SimpleFiniteGround { .. }, _, _) if d.solver_mode == SolverMode::Mpie => {
             "mpie-exact"
         }
-        (_, _, SommerfeldOutcome::Applied) => "sommerfeld-applied",
+        (_, _, SommerfeldOutcome::Applied | SommerfeldOutcome::AppliedBelowMeasuredBand { .. }) => {
+            "sommerfeld-applied"
+        }
         (_, _, SommerfeldOutcome::Declined) => "sommerfeld-declined",
+        (_, _, SommerfeldOutcome::DeclinedResolution { .. }) => "sommerfeld-declined-resolution",
         (_, _, SommerfeldOutcome::DeclinedReceive) => "sommerfeld-declined-receive",
         (GroundModel::SimpleFiniteGround { .. }, GroundSolver::Rcm, _) => "rcm",
         // No finite ground: no ground solver to name.
