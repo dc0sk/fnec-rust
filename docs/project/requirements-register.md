@@ -110,7 +110,7 @@ Phase 8.
 | GAP-006 | GUI information architecture | Resolved with a deviation: IA in `docs/gui-redesign-plan.md`, `docs/gui-guide.md`, GUI shipped; **no task-flow wireframes and no workflow-feedback notes**, which the criterion asks for |
 | GAP-007 | GPU rollout criteria | Resolved 2026-05-03 (`docs/gpu-arch.md`) |
 | GAP-008 | Dependency/license policy | Resolved (BLK-005): `deny.toml`, `docs/dependency-policy.md` |
-| GAP-009 | Workflow parity acceptance criteria | Resolved (PH3-CHK-012): `docs/usability-benchmark-ph3.md`, measured on the pre-redesign GUI |
+| GAP-009 | Workflow parity acceptance criteria | Open: `docs/usability-benchmark-ph3.md` (PH3-CHK-012) has step counts but estimated times, a pre-authored deck and xnec2c only; not re-run on the redesigned GUI (`docs/roadmap.md` § Gaps and blockers) |
 | GAP-010 | Automation/embedding strategy | Resolved (Phase 4): `docs/automation-guide.md`, `docs/json-output-schema.md`, `docs/python-bindings.md`, `bindings/fnec_py` |
 | GAP-011 | Classic batch-CLI parity definition | Resolved (Phase 2): `docs/cli-guide.md` (stdout/stderr, exit codes, `--output-format`) |
 | GAP-012 | AutoEZ-class automation acceptance | **Closed, 4 of 4**: variable sweeps (`--vars`, `template_contract.rs`), resonance targeting (`resonance_search.rs`, `resonance_contract.rs`), convergence-study helper: `fnec converge` (`converge_contract.rs`), matching-network helper: `fnec match` (BL-IMPR-017) |
