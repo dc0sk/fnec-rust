@@ -1,7 +1,7 @@
 use base64::Engine;
 use std::io::{BufRead, Write};
 
-use crate::protocol::{read_bounded_line, BoundedRead};
+use crate::protocol::{read_bounded_line, BoundedRead, UNKNOWN_TASK_ID};
 use crate::protocol::{ErrorCode, Impedance, TaskMessage, TaskResult};
 use crate::solve::SolveError;
 
@@ -31,7 +31,7 @@ pub fn run_worker_stdio<R: BufRead, W: Write>(reader: R, mut writer: W) {
             Ok(BoundedRead::TooLong) => {
                 let _ = writeln!(
                     writer,
-                    r#"{{"status":"error","task_id":"unknown","frequency_hz":0.0,"error_code":"resource_exhausted","error_message":"task line exceeds the {MAX_LINE_BYTES}-byte protocol maximum","warnings":[]}}"#
+                    r#"{{"status":"error","task_id":"{UNKNOWN_TASK_ID}","frequency_hz":0.0,"error_code":"resource_exhausted","error_message":"task line exceeds the {MAX_LINE_BYTES}-byte protocol maximum","warnings":[]}}"#
                 );
                 let _ = writer.flush();
                 continue;
@@ -51,7 +51,7 @@ pub fn run_worker_stdio<R: BufRead, W: Write>(reader: R, mut writer: W) {
         let json = match serde_json::to_string(&result) {
             Ok(s) => s,
             Err(e) => format!(
-                r#"{{"status":"error","task_id":"unknown","frequency_hz":0.0,"error_code":"internal","error_message":"serialization error: {e}"}}"#
+                r#"{{"status":"error","task_id":"{UNKNOWN_TASK_ID}","frequency_hz":0.0,"error_code":"internal","error_message":"serialization error: {e}"}}"#
             ),
         };
         let _ = writeln!(writer, "{json}");
@@ -88,7 +88,7 @@ fn is_shutdown(line: &str) -> bool {
 fn process_task_caught(line: &str) -> TaskResult {
     let task_id = serde_json::from_str::<TaskMessage>(line)
         .map(|t| t.task_id)
-        .unwrap_or_else(|_| "unknown".to_string());
+        .unwrap_or_else(|_| UNKNOWN_TASK_ID.to_string());
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| process_task(line))) {
         Ok(result) => result,
         Err(payload) => {
@@ -120,7 +120,7 @@ fn process_task(line: &str) -> TaskResult {
         Ok(t) => t,
         Err(e) => {
             return TaskResult::Error {
-                task_id: "unknown".to_string(),
+                task_id: UNKNOWN_TASK_ID.to_string(),
                 frequency_hz: 0.0,
                 error_code: ErrorCode::ParseError,
                 error_message: format!(

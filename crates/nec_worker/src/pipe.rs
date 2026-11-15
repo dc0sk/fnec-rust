@@ -30,8 +30,21 @@
 //! [`read_bounded_line`] — the worker's own side's read since FND-096 — and
 //! pushes a [`Line`]: the text, or `TooLong` for a line past
 //! [`MAX_LINE_BYTES`], whose tail has been drained so the stream is back in
-//! sync. A `TooLong` is therefore a `Task` fault, not a `Worker` one (the
-//! FND-117 rule: a complete line came back; one bad line is not a dead host).
+//! sync. A `TooLong` names no task, so it is a stray line (below): skipped, and
+//! counted toward [`MAX_STRAY_LINES`].
+//!
+//! **An answer is paired with the task it names (FND-326).** Both handles took
+//! the next line as the answer to the task just written. A worker's stdout is
+//! shared with whatever the remote login shell prints — one `.bashrc` `echo`
+//! was read as task 0's answer, task 0's answer as task 1's, and every later
+//! impedance of the sweep printed against the next frequency, with no word.
+//! [`WorkerPipe::answer_to`] reads until a line names the waiting task: a line
+//! that is not a result, a result naming another task and an over-long line are
+//! strays — skipped, warned about once per connection, and capped. A worker's
+//! `"unknown"` ([`UNKNOWN_TASK_ID`]) answers the waiting task, because one task
+//! is in flight per worker and that is the protocol's word for "I could not read
+//! it". A solved result must also carry the task's `frequency_hz`: the id names
+//! the task, the frequency is the number the user reads beside it.
 //!
 //! **And a writer thread (FND-244).** A child that stops draining stdin blocked
 //! the task write forever once the line passed the pipe buffer (64 KiB here; a
@@ -55,10 +68,14 @@
 
 use std::io::{BufReader, Write};
 use std::process::Child;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::protocol::{read_bounded_line, BoundedRead, MAX_LINE_BYTES};
+use crate::protocol::{
+    read_bounded_line, BoundedRead, TaskMessage, TaskResult, MAX_LINE_BYTES, UNKNOWN_TASK_ID,
+};
 use crate::DispatchError;
 
 /// How long to wait for a worker's answer to one solve task.
@@ -86,6 +103,41 @@ pub const PROBE_DEADLINE: Duration = Duration::from_secs(30);
 /// shuts the pool down BEFORE printing, so a worker wedged here hid a sweep that
 /// had already succeeded (FND-137).
 pub const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
+
+/// How many stray lines one task may read past before the worker is judged not
+/// to speak the protocol: a `Worker` fault, so it is evicted and the task takes
+/// a strike, as for a worker that took the task and never answered (FND-326).
+///
+/// 64: a dotfile banner is one to ten lines, and a worker that writes 64 lines
+/// in a row that answer nothing is not a worker. The deadline bounds the skip
+/// loop in time; this bounds it in lines — and with the line bound (FND-331) in
+/// memory — so a stream of junk is evicted at once instead of being read for the
+/// whole solve deadline.
+pub const MAX_STRAY_LINES: usize = 64;
+
+/// How many lines the reader thread may hold that no task has read yet.
+///
+/// The stray cap bounds what one task READS; it did not bound what the reader
+/// thread QUEUED, in an unbounded channel, while the task was reading it or no
+/// task was waiting at all. A worker writing `yes` filled 12 GB in under a
+/// minute with the cap removed (FND-326's sabotage, stopped by `ulimit -v`), and
+/// with the cap in place still queued as fast as it wrote until the eviction. A
+/// bounded channel makes the reader wait, and the child with it: a healthy
+/// worker writes one line per task, so it never comes near this (FND-356).
+///
+/// Why 65: a task the cap tolerates reads at most `MAX_STRAY_LINES - 1` strays
+/// and then its answer, so a queue of `MAX_STRAY_LINES + 1` — the +1 is the
+/// answer — never makes a worker the cap would keep wait on the controller.
+///
+/// Worst case, each line at the protocol maximum: 65 × [`MAX_LINE_BYTES`] ≈
+/// 260 MiB per worker, bounded, where the unbounded channel had no bound.
+const QUEUED_LINES: usize = MAX_STRAY_LINES + 1;
+
+/// How many stray lines the warning quotes.
+const QUOTED_STRAYS: usize = 3;
+
+/// How much of one stray line the warning quotes.
+const QUOTE_BYTES: usize = 120;
 
 /// Why a line could not be handed to the worker. Every case means the line was
 /// not delivered, so every case is [`DispatchError::Unreachable`].
@@ -135,6 +187,84 @@ enum Line {
     TooLong,
 }
 
+/// What one line from the worker is, to the task waiting on it.
+#[derive(Debug)]
+enum Reading {
+    /// The task's answer.
+    Answer(TaskResult),
+    /// The task's answer, and unusable: a `Task` fault, the worker stays.
+    Unusable(String),
+    /// Not the task's answer, described for the warning.
+    Stray(String),
+}
+
+/// A stray line as the warning quotes it: cut to [`QUOTE_BYTES`] on a character
+/// boundary, quoted, every non-printing character escaped.
+fn quote(text: &str) -> String {
+    if text.len() <= QUOTE_BYTES {
+        return format!("{text:?}");
+    }
+    let mut end = QUOTE_BYTES;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{:?}…", &text[..end])
+}
+
+/// Pair one line with `task`, or say why it is not its answer.
+///
+/// Who a line answers is read before what it says: a line naming this task that
+/// is not a readable result is this task's UNUSABLE answer (FND-117) — skipping
+/// it would wait out the whole deadline and then evict a healthy worker over one
+/// field an older or newer build spells differently.
+fn classify(line: Line, task: &TaskMessage) -> Reading {
+    let text = match line {
+        Line::TooLong => {
+            return Reading::Stray(format!(
+                "a line past the {MAX_LINE_BYTES}-byte protocol maximum"
+            ))
+        }
+        Line::Text(t) => t,
+    };
+    let text = text.trim();
+    let named = serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|v| v.get("task_id")?.as_str().map(str::to_owned));
+    let Some(id) = named else {
+        return Reading::Stray(quote(text));
+    };
+    if id != task.task_id && id != UNKNOWN_TASK_ID {
+        return Reading::Stray(format!("a result for task {}", quote(&id)));
+    }
+    let result: TaskResult = match serde_json::from_str(text) {
+        Ok(r) => r,
+        Err(e) => return Reading::Unusable(format!("unreadable result from worker: {e}")),
+    };
+    if let TaskResult::Ok {
+        task_id,
+        frequency_hz,
+        ..
+    } = &result
+    {
+        if task_id == UNKNOWN_TASK_ID {
+            return Reading::Unusable(format!(
+                "it sent a solved result for task '{UNKNOWN_TASK_ID}', which names no \
+                 task; the number is refused"
+            ));
+        }
+        // Exact: the worker copies the f64 it was sent, and serde_json writes a
+        // finite f64 so that it reads back to the same value. An `Error` is not
+        // checked — it legitimately carries 0.0 when the task was unreadable.
+        if *frequency_hz != task.frequency_hz {
+            return Reading::Unusable(format!(
+                "it answered task '{}' at {frequency_hz} Hz for a task at {} Hz",
+                task.task_id, task.frequency_hz
+            ));
+        }
+    }
+    Reading::Answer(result)
+}
+
 /// One line for the writer thread, and where to say how the write went.
 struct Job {
     line: String,
@@ -149,6 +279,14 @@ pub struct WorkerPipe {
     jobs: Sender<Job>,
     lines: Receiver<Line>,
     poisoned: bool,
+    /// Every stray line this pipe has skipped — the tripwire a test reads.
+    strays: usize,
+    /// Whether this worker's strays have been warned about yet: once per
+    /// connection, since a reconnect builds a fresh pipe.
+    warned: bool,
+    /// Every line the reader thread has handed over — the tripwire for the
+    /// queue's bound.
+    queued: Arc<AtomicUsize>,
 }
 
 impl std::fmt::Debug for Job {
@@ -174,7 +312,10 @@ impl WorkerPipe {
                 let _ = job.ack.send(r);
             }
         });
-        let (tx, lines) = mpsc::channel();
+        // Bounded (see QUEUED_LINES).
+        let (tx, lines) = mpsc::sync_channel(QUEUED_LINES);
+        let queued = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&queued);
         std::thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
             let mut buf = Vec::new();
@@ -202,6 +343,7 @@ impl WorkerPipe {
                 if tx.send(item).is_err() {
                     return;
                 }
+                counted.fetch_add(1, Ordering::Relaxed);
             }
         });
         Self {
@@ -209,6 +351,9 @@ impl WorkerPipe {
             jobs,
             lines,
             poisoned: false,
+            strays: 0,
+            warned: false,
+            queued,
         }
     }
 
@@ -238,30 +383,105 @@ impl WorkerPipe {
         }
     }
 
-    /// One task's round trip: write `line` and wait for the answer, both within
-    /// one `deadline` — the read gets what the write left.
-    pub fn exchange(&mut self, line: &str, deadline: Duration) -> Result<String, DispatchError> {
-        let start = Instant::now();
-        self.send(line, deadline)?;
-        self.recv_by(start, deadline)
+    /// The answer to `task` — the line that names it — within `deadline` after
+    /// `start`, the task's one deadline across its write and this read
+    /// (FND-101). `worker` labels the warning.
+    ///
+    /// Stray lines are skipped (see the module doc): the first time a worker
+    /// writes any, one warning quotes them. A worker that writes
+    /// [`MAX_STRAY_LINES`] of them for one task is a `Worker` fault. A timeout or
+    /// a closed stdout while skipping is the `Worker` fault it always was.
+    pub fn answer_to(
+        &mut self,
+        task: &TaskMessage,
+        worker: &str,
+        start: Instant,
+        deadline: Duration,
+    ) -> Result<TaskResult, DispatchError> {
+        let mut skipped = 0usize;
+        let mut quoted: Vec<String> = Vec::new();
+        loop {
+            let line = match self.recv_line(start, deadline) {
+                Ok(line) => line,
+                Err(DispatchError::Worker(m)) if skipped > 0 => {
+                    return Err(DispatchError::Worker(format!(
+                        "{m}, after {skipped} line{} that answered nothing",
+                        if skipped == 1 { "" } else { "s" }
+                    )))
+                }
+                Err(e) => return Err(e),
+            };
+            let answer = match classify(line, task) {
+                Reading::Answer(result) => Ok(result),
+                Reading::Unusable(m) => Err(DispatchError::Task(m)),
+                Reading::Stray(what) => {
+                    skipped += 1;
+                    self.strays += 1;
+                    if quoted.len() < QUOTED_STRAYS {
+                        quoted.push(what);
+                    }
+                    if skipped >= MAX_STRAY_LINES {
+                        return Err(DispatchError::Worker(format!(
+                            "it wrote {skipped} lines, none the answer to task '{}' — it is \
+                             not speaking the protocol; the first: {}",
+                            task.task_id,
+                            quoted.join(", ")
+                        )));
+                    }
+                    // A stray does not extend the deadline. `recv_timeout` of
+                    // what is left returns a QUEUED line even when nothing is
+                    // left, so without this a worker that keeps lines coming
+                    // is never timed out.
+                    if start.elapsed() >= deadline {
+                        return Err(DispatchError::Worker(format!(
+                            "worker did not answer within {:.1}s, after {skipped} line{} that \
+                             answered nothing",
+                            deadline.as_secs_f64(),
+                            if skipped == 1 { "" } else { "s" }
+                        )));
+                    }
+                    continue;
+                }
+            };
+            if skipped > 0 && !self.warned {
+                self.warned = true;
+                eprintln!(
+                    "warning: worker '{worker}' wrote {skipped} line{} that {} not the answer \
+                     to task '{}' before answering it; ignored: {}{}. Keep the worker \
+                     host's non-interactive shell startup silent on stdout \
+                     (docs/worker-deployment.md)",
+                    if skipped == 1 { "" } else { "s" },
+                    if skipped == 1 { "was" } else { "were" },
+                    task.task_id,
+                    quoted.join(", "),
+                    if skipped > quoted.len() { ", …" } else { "" },
+                );
+            }
+            return answer;
+        }
+    }
+
+    /// How many stray lines this pipe has skipped, over its life.
+    pub fn stray_lines(&self) -> usize {
+        self.strays
+    }
+
+    /// How many lines the reader thread has handed over, over the pipe's life.
+    pub fn queued_lines(&self) -> usize {
+        self.queued.load(Ordering::Relaxed)
     }
 
     /// Wait for one line until `deadline` after `start` — the one place a task's
     /// deadline is divided between its write and its read.
     ///
     /// A timeout is a WORKER fault: the peer took the whole task and did not
-    /// answer, so it is not usable, whatever the task's own merits. A line past
-    /// the protocol maximum is a TASK fault: it was drained, so the stream is in
-    /// sync and the worker stays (FND-331, FND-117).
-    pub fn recv_by(&mut self, start: Instant, deadline: Duration) -> Result<String, DispatchError> {
+    /// answer, so it is not usable, whatever the task's own merits.
+    fn recv_line(&mut self, start: Instant, deadline: Duration) -> Result<Line, DispatchError> {
         match self
             .lines
             .recv_timeout(deadline.saturating_sub(start.elapsed()))
         {
-            Ok(Line::Text(line)) => Ok(line),
-            Ok(Line::TooLong) => Err(DispatchError::Task(format!(
-                "the worker's result line exceeds the {MAX_LINE_BYTES}-byte protocol maximum"
-            ))),
+            Ok(line) => Ok(line),
             // The whole deadline, not what was left of it for the read.
             Err(RecvTimeoutError::Timeout) => Err(DispatchError::Worker(format!(
                 "worker did not answer within {:.1}s",
@@ -394,6 +614,248 @@ mod tests {
         assert!(r.unwrap_err().reconnects());
     }
 
+    fn task(id: &str, frequency_hz: f64) -> TaskMessage {
+        TaskMessage {
+            task_id: id.to_string(),
+            deck_hash: "h".to_string(),
+            deck_b64: String::new(),
+            solver_config: crate::protocol::WorkerSolverConfig::default(),
+            frequency_hz,
+        }
+    }
+
+    /// A solved result line, as a worker writes it.
+    fn ok_line(id: &str, frequency_hz: f64) -> String {
+        serde_json::to_string(&TaskResult::Ok {
+            task_id: id.to_string(),
+            frequency_hz,
+            impedance: crate::protocol::Impedance {
+                re_ohm: 73.0,
+                im_ohm: 42.5,
+            },
+            vswr_50: 2.0,
+            feedpoint_current_mag: 0.01,
+            feedpoint_current_phase_deg: -30.0,
+            exec_used: "cpu".to_string(),
+            mesh: crate::protocol::MESH.to_string(),
+            warnings: Vec::new(),
+        })
+        .expect("serialise")
+    }
+
+    /// Poll until the reader has handed over `n` lines, at most 5 s.
+    fn wait_until_queued(pipe: &WorkerPipe, n: usize) {
+        let start = Instant::now();
+        while pipe.queued_lines() < n {
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "the child queued {} of {n} lines in 5 s",
+                pipe.queued_lines()
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    /// A child that prints `lines`, one per line, then waits: the answer is read
+    /// without a task being sent, so nothing about the child's input matters.
+    fn printing(lines: &[String]) -> WorkerPipe {
+        let mut script = String::new();
+        for l in lines {
+            script.push_str(&format!("printf '%s\\n' '{l}'; "));
+        }
+        script.push_str("exec sleep 300");
+        pipe_to(&script)
+    }
+
+    /// FND-326 T1: a banner before the answer is skipped and counted, and the
+    /// answer is still this task's. Without the skip loop the banner is read as
+    /// the answer and fails the task.
+    #[test]
+    fn a_banner_before_the_answer_is_skipped_and_counted() {
+        let mut pipe = printing(&["banner from .bashrc".to_string(), ok_line("t1", 14.2e6)]);
+        let r = pipe.answer_to(
+            &task("t1", 14.2e6),
+            "test",
+            Instant::now(),
+            Duration::from_secs(20),
+        );
+        let strays = pipe.stray_lines();
+        pipe.kill();
+        let r = r.expect("the answer after a banner must be this task's");
+        assert_eq!(r.task_id(), "t1");
+        assert_eq!(strays, 1, "the banner is one stray line");
+    }
+
+    /// T1's control: the same answer with no banner reads no stray.
+    #[test]
+    fn an_answer_with_no_banner_reads_no_stray() {
+        let mut pipe = printing(&[ok_line("t1", 14.2e6)]);
+        let r = pipe.answer_to(
+            &task("t1", 14.2e6),
+            "test",
+            Instant::now(),
+            Duration::from_secs(20),
+        );
+        let strays = pipe.stray_lines();
+        pipe.kill();
+        assert!(r.is_ok(), "{r:?}");
+        assert_eq!(strays, 0);
+    }
+
+    /// A VALID result naming another task is a stray too — the case a filter of
+    /// unparseable lines alone lets through as this task's answer.
+    #[test]
+    fn a_result_for_another_task_is_a_stray() {
+        let mut pipe = printing(&[ok_line("stale", 1.0e6), ok_line("t1", 14.2e6)]);
+        let r = pipe.answer_to(
+            &task("t1", 14.2e6),
+            "test",
+            Instant::now(),
+            Duration::from_secs(20),
+        );
+        let strays = pipe.stray_lines();
+        pipe.kill();
+        let r = r.expect("the stale line must be skipped");
+        assert!(matches!(r, TaskResult::Ok { frequency_hz, .. } if frequency_hz == 14.2e6));
+        assert_eq!(strays, 1);
+    }
+
+    /// The right id at the wrong frequency is the worker's bug, not a stray: a
+    /// Task fault, so the number is never printed against the task's frequency.
+    #[test]
+    fn the_right_id_at_another_frequency_is_refused() {
+        let mut pipe = printing(&[ok_line("t1", 13.5e6)]);
+        let r = pipe.answer_to(
+            &task("t1", 14.2e6),
+            "test",
+            Instant::now(),
+            Duration::from_secs(20),
+        );
+        pipe.kill();
+        match r {
+            Err(DispatchError::Task(m)) => assert!(m.contains("13500000"), "{m}"),
+            other => panic!("expected a Task fault, got {other:?}"),
+        }
+    }
+
+    /// `"unknown"` answers the waiting task (the strictness control): an error
+    /// for an unreadable task comes back at once, not after the deadline. A
+    /// solved result for `"unknown"` is refused — no worker sends one.
+    #[test]
+    fn unknown_answers_the_waiting_task() {
+        let err = r#"{"status":"error","task_id":"unknown","frequency_hz":0.0,"error_code":"parse_error","error_message":"x"}"#;
+        let mut pipe = printing(&[err.to_string()]);
+        let start = Instant::now();
+        let r = pipe.answer_to(&task("t1", 14.2e6), "test", start, Duration::from_secs(20));
+        let took = start.elapsed();
+        pipe.kill();
+        assert!(matches!(&r, Ok(TaskResult::Error { .. })), "{r:?}");
+        assert!(took < Duration::from_secs(5), "took {took:?}");
+
+        let mut pipe = printing(&[ok_line("unknown", 14.2e6)]);
+        let r = pipe.answer_to(
+            &task("t1", 14.2e6),
+            "test",
+            Instant::now(),
+            Duration::from_secs(20),
+        );
+        pipe.kill();
+        assert!(matches!(&r, Err(DispatchError::Task(_))), "{r:?}");
+    }
+
+    /// A line naming this task that is not a readable result is this task's
+    /// unusable answer (FND-117), not a stray to wait past.
+    #[test]
+    fn an_unreadable_line_naming_the_task_is_a_task_fault() {
+        let mut pipe = printing(&[r#"{"status":"ok","task_id":"t1"}"#.to_string()]);
+        let start = Instant::now();
+        let r = pipe.answer_to(&task("t1", 14.2e6), "test", start, Duration::from_secs(20));
+        pipe.kill();
+        assert!(
+            matches!(&r, Err(DispatchError::Task(m)) if m.contains("unreadable")),
+            "{r:?}"
+        );
+        assert!(start.elapsed() < Duration::from_secs(5));
+    }
+
+    /// The cap: a child that writes only junk is a Worker fault after
+    /// MAX_STRAY_LINES lines, long before its deadline.
+    #[test]
+    fn a_worker_that_only_babbles_is_a_worker_fault() {
+        let mut pipe = pipe_to("exec yes banner");
+        let start = Instant::now();
+        let r = pipe.answer_to(&task("t1", 14.2e6), "test", start, Duration::from_secs(30));
+        let took = start.elapsed();
+        let strays = pipe.stray_lines();
+        pipe.kill();
+        assert!(
+            matches!(&r, Err(DispatchError::Worker(m)) if m.contains("none the answer")),
+            "{r:?}"
+        );
+        assert_eq!(strays, MAX_STRAY_LINES);
+        assert!(
+            took < Duration::from_secs(10),
+            "the cap fired, not the clock: {took:?}"
+        );
+    }
+
+    /// The reader runs at most QUEUED_LINES ahead of the task reading it: a
+    /// child writing without end, with nobody reading, has handed over no more
+    /// than that. With an unbounded channel it hands over every line it writes.
+    #[test]
+    fn the_reader_queues_a_bounded_number_of_lines() {
+        let mut pipe = pipe_to("exec yes banner");
+        // Polled, not slept: a child that had not started writing would leave
+        // the count at 0 and pass on any build.
+        wait_until_queued(&pipe, QUEUED_LINES);
+        // Settle: an unbounded reader keeps going past the bound.
+        std::thread::sleep(Duration::from_millis(100));
+        let queued = pipe.queued_lines();
+        pipe.kill();
+        assert_eq!(
+            queued, QUEUED_LINES,
+            "{queued} lines queued, bound {QUEUED_LINES}"
+        );
+    }
+
+    /// Strays do not extend an expired deadline: ten stray lines already queued
+    /// past a 100 ms deadline end the wait at the first, a Worker fault, even
+    /// though an answer is queued behind them.
+    #[test]
+    fn strays_do_not_extend_an_expired_deadline() {
+        let mut lines: Vec<String> = (0..10).map(|i| format!("junk {i}")).collect();
+        lines.push(ok_line("t1", 14.2e6));
+        let mut pipe = printing(&lines);
+        // Every line queued before the wait starts (polled, not slept): with a
+        // line missing, a build without the check also times out, on the gap.
+        wait_until_queued(&pipe, lines.len());
+        let start = Instant::now() - Duration::from_millis(200);
+        let r = pipe.answer_to(
+            &task("t1", 14.2e6),
+            "test",
+            start,
+            Duration::from_millis(100),
+        );
+        let strays = pipe.stray_lines();
+        pipe.kill();
+        assert!(
+            matches!(&r, Err(DispatchError::Worker(m)) if m.contains("did not answer")),
+            "{r:?}"
+        );
+        assert_eq!(
+            strays, 1,
+            "the wait ends at the first stray past the deadline"
+        );
+    }
+
+    /// The quote is bounded and escaped.
+    #[test]
+    fn a_quoted_stray_is_cut_and_escaped() {
+        let q = quote(&format!("\u{1b}[31m{}", "é".repeat(200)));
+        assert!(q.starts_with("\"\\u{1b}[31m"), "{q}");
+        assert!(q.len() < QUOTE_BYTES + 16, "{}", q.len());
+    }
+
     /// FND-331: an answer line past the protocol maximum is refused, not grown,
     /// and the next real line is still read — FND-096's worker-side test,
     /// mirrored on the controller's side. Without the bound the 5 MiB line comes
@@ -405,20 +867,19 @@ mod tests {
             "head -c {over} /dev/zero | tr '\\0' x; echo; echo good; exec sleep 300"
         ));
         let deadline = Duration::from_secs(60);
-        let first = pipe.recv_by(Instant::now(), deadline);
-        let second = pipe.recv_by(Instant::now(), deadline);
+        let first = pipe.recv_line(Instant::now(), deadline);
+        let second = pipe.recv_line(Instant::now(), deadline);
         pipe.kill();
         match &first {
-            Err(DispatchError::Task(m)) => assert!(m.contains("protocol maximum"), "{m}"),
-            Err(e) => panic!("an over-long line must be a Task fault, got {e:?}"),
-            Ok(l) => panic!(
+            Ok(Line::TooLong) => {}
+            Ok(Line::Text(l)) => panic!(
                 "an over-long line was delivered as text ({} bytes)",
                 l.len()
             ),
+            Err(e) => panic!("an over-long line must arrive as TooLong, got {e:?}"),
         }
-        assert_eq!(
-            second.as_deref().ok(),
-            Some("good"),
+        assert!(
+            matches!(&second, Ok(Line::Text(l)) if l == "good"),
             "the line after the over-long one must still be read: {second:?}"
         );
     }
@@ -432,11 +893,11 @@ mod tests {
         let mut pipe = pipe_to(&format!(
             "head -c {text} /dev/zero | tr '\\0' x; echo; exec sleep 300"
         ));
-        let r = pipe.recv_by(Instant::now(), Duration::from_secs(60));
+        let r = pipe.recv_line(Instant::now(), Duration::from_secs(60));
         pipe.kill();
         match r {
-            Ok(l) => assert_eq!(l.len(), text),
-            Err(e) => panic!("a line at the maximum must be delivered: {e:?}"),
+            Ok(Line::Text(l)) => assert_eq!(l.len(), text),
+            other => panic!("a line at the maximum must be delivered: {other:?}"),
         }
     }
 

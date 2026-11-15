@@ -24,7 +24,8 @@ mod common;
 
 /// A worker that answers normally, except that a task whose id contains
 /// `poison` makes it exit without a word — a deterministic crash holding that
-/// task, which is exactly the shape that drained the pool.
+/// task, which is exactly the shape that drained the pool. Its answers name the
+/// task and its frequency, which the controller pairs them by (FND-326).
 fn poison_stub() -> (common::TempDir, std::path::PathBuf) {
     let dir = common::TempDir::new("poison");
     let staged = dir.join("stub.staging");
@@ -38,7 +39,8 @@ fn poison_stub() -> (common::TempDir, std::path::PathBuf) {
                   *shutdown*) exit 0 ;;\n\
                   *poison*)   exit 1 ;;\n\
                 esac\n\
-                printf '{\"status\":\"ok\",\"task_id\":\"t\",\"frequency_hz\":1.0,\"impedance\":{\"re_ohm\":50.0,\"im_ohm\":0.0},\"vswr_50\":1.0,\"feedpoint_current_mag\":1.0,\"feedpoint_current_phase_deg\":0.0,\"mesh\":\"free-end-thirds\"}\\n'\n\
+                id=$(printf '%s' \"$line\" | sed 's/.*\"task_id\":\"\\([^\"]*\\)\".*/\\1/')\n\
+                printf '{\"status\":\"ok\",\"task_id\":\"%s\",\"frequency_hz\":14200000.0,\"impedance\":{\"re_ohm\":50.0,\"im_ohm\":0.0},\"vswr_50\":1.0,\"feedpoint_current_mag\":1.0,\"feedpoint_current_phase_deg\":0.0,\"mesh\":\"free-end-thirds\"}\\n' \"$id\"\n\
               done\n",
         )
         .expect("write stub");
@@ -172,7 +174,8 @@ fn a_task_whose_write_stalls_is_not_blamed_for_it() {
     std::fs::write(
         &answer,
         r#"/shutdown/ { exit }
-{ print "{\"status\":\"ok\",\"task_id\":\"t\",\"frequency_hz\":1.0,\"impedance\":{\"re_ohm\":50.0,\"im_ohm\":0.0},\"vswr_50\":1.0,\"feedpoint_current_mag\":1.0,\"feedpoint_current_phase_deg\":0.0,\"mesh\":\"free-end-thirds\"}"; fflush() }
+{ match($0, /"task_id":"[^"]*"/); id = substr($0, RSTART + 11, RLENGTH - 12)
+  print "{\"status\":\"ok\",\"task_id\":\"" id "\",\"frequency_hz\":14200000.0,\"impedance\":{\"re_ohm\":50.0,\"im_ohm\":0.0},\"vswr_50\":1.0,\"feedpoint_current_mag\":1.0,\"feedpoint_current_phase_deg\":0.0,\"mesh\":\"free-end-thirds\"}"; fflush() }
 "#,
     )
     .expect("write awk responder");

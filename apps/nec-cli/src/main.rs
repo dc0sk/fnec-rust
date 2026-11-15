@@ -1216,6 +1216,31 @@ fn worker_warning_lines(
         .collect()
 }
 
+/// A worker's solved result for a frequency other than the one this point
+/// asked for is that point's failure, never its number.
+///
+/// A tripwire, not the fix: the pool pairs every answer with the task that names
+/// it (FND-326), so this cannot fire on a pool that works. It is here because
+/// the consumer used to zip outcomes with frequencies by position and drop the
+/// result's `frequency_hz` with `..` — the one field that would have shown a
+/// sweep printing every impedance against the next frequency. Exact `==`: the
+/// worker echoes the `f64` it was sent, and JSON round-trips it exactly. An
+/// `Error` is not checked; it carries 0.0 when the task was unreadable.
+fn refuse_misattributed_result(
+    sent_hz: f64,
+    outcome: nec_worker::DispatchOutcome,
+) -> nec_worker::DispatchOutcome {
+    match outcome {
+        Ok((TaskResult::Ok { frequency_hz, .. }, label)) if frequency_hz != sent_hz => {
+            Err(format!(
+                "worker '{label}' answered at {frequency_hz} Hz for the point at {sent_hz} Hz; \
+                 the number is refused"
+            ))
+        }
+        other => other,
+    }
+}
+
 /// Print the run's FND-302 caveat once, at its worst judged residual: the
 /// residual is a property of the solve, and a sweep should not repeat it per
 /// point. Local runs only — a `--hosts` point carries no residual, and the
@@ -1466,7 +1491,7 @@ fn run_distributed_solve(
     let mut seen_worker_warnings: std::collections::HashSet<String> =
         std::collections::HashSet::new();
     for ((fidx, &freq_hz), outcome) in freqs_hz.iter().enumerate().zip(outcomes) {
-        let result = match outcome {
+        let result = match refuse_misattributed_result(freq_hz, outcome) {
             Ok((
                 TaskResult::Ok {
                     impedance,
@@ -1897,8 +1922,9 @@ mod tests {
     use super::{
         auto_select_execution_mode, detect_compatibility_profile, distributed_feedpoint,
         distributed_negative_resistance_warnings, distributed_pre_solve_caveats,
-        distributed_sweep_summary, exec_fallback_warning, json_document, worker_exec_preference,
-        worker_warning_lines, CompatibilityProfile, ExecutionMode,
+        distributed_sweep_summary, exec_fallback_warning, json_document,
+        refuse_misattributed_result, worker_exec_preference, worker_warning_lines,
+        CompatibilityProfile, ExecutionMode,
     };
     use nec_report::FeedpointRow;
     use nec_solver::validate::RunLoads;
@@ -2401,6 +2427,59 @@ mod tests {
     fn a_worker_with_no_caveats_prints_nothing() {
         let mut seen = std::collections::HashSet::new();
         assert!(worker_warning_lines("ssh:hostA", &[], &mut seen).is_empty());
+    }
+
+    fn solved_at(frequency_hz: f64) -> nec_worker::DispatchOutcome {
+        Ok((
+            nec_worker::TaskResult::Ok {
+                task_id: "na-0".to_string(),
+                frequency_hz,
+                impedance: nec_worker::Impedance {
+                    re_ohm: 60.7,
+                    im_ohm: -80.9,
+                },
+                vswr_50: 3.9,
+                feedpoint_current_mag: 0.01,
+                feedpoint_current_phase_deg: 50.0,
+                exec_used: "cpu".to_string(),
+                mesh: nec_worker::MESH.to_string(),
+                warnings: Vec::new(),
+            },
+            "ssh:hostA".to_string(),
+        ))
+    }
+
+    /// FND-326's tripwire (O4): a solved result for another frequency fails the
+    /// point, naming both frequencies, and is never printed as its number.
+    #[test]
+    fn a_result_for_another_frequency_fails_the_point() {
+        let err = refuse_misattributed_result(13.5e6, solved_at(13.0e6))
+            .expect_err("a 13 MHz answer must not be the 13.5 MHz point's number");
+        assert!(
+            err.contains("13000000") && err.contains("13500000") && err.contains("ssh:hostA"),
+            "{err}"
+        );
+    }
+
+    /// The control: the matching frequency passes through untouched, and an
+    /// `Error` (which carries 0.0 for an unreadable task) is not judged.
+    #[test]
+    fn a_result_for_its_own_frequency_passes() {
+        assert!(refuse_misattributed_result(13.0e6, solved_at(13.0e6)).is_ok());
+        let error = Ok((
+            nec_worker::TaskResult::Error {
+                task_id: "unknown".to_string(),
+                frequency_hz: 0.0,
+                error_code: nec_worker::ErrorCode::ParseError,
+                error_message: "x".to_string(),
+                warnings: Vec::new(),
+            },
+            "local".to_string(),
+        ));
+        assert!(matches!(
+            refuse_misattributed_result(13.0e6, error),
+            Ok((nec_worker::TaskResult::Error { .. }, _))
+        ));
     }
 
     #[test]

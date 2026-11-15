@@ -171,8 +171,9 @@ impl SshWorkerHandle {
             Err(e) => return Err(e.into()),
         }
 
-        let line = match self.pipe.recv_by(start, self.deadline) {
-            Ok(line) => line,
+        let label = self.label();
+        match self.pipe.answer_to(task, &label, start, self.deadline) {
+            Ok(result) => Ok(result),
             Err(e) => {
                 // Reconnect only for a DROPPED connection. A timeout means the
                 // host accepted the task and went quiet, and resending it is how
@@ -190,19 +191,18 @@ impl SshWorkerHandle {
                 self.reconnect()?;
                 let start = std::time::Instant::now();
                 self.pipe.send(&json, self.deadline)?;
-                match self.pipe.recv_by(start, self.deadline) {
-                    Ok(line) => line,
-                    Err(e) => return Err(self.who_closed_it(e)),
-                }
+                // The fresh connection runs the same login shell, so it pairs
+                // the same way (FND-326).
+                self.pipe
+                    .answer_to(task, &label, start, self.deadline)
+                    .map_err(|e| self.who_closed_it(e))
             }
-        };
+        }
+    }
 
-        // A complete line came back, so the connection is in sync whatever it
-        // says. The host is healthy; this one result is unusable (FND-117).
-        let result: TaskResult = serde_json::from_str(line.trim()).map_err(|e| {
-            crate::DispatchError::Task(format!("unreadable result from worker: {e}"))
-        })?;
-        Ok(result)
+    /// The label the pool and its warnings name this worker by.
+    pub fn label(&self) -> String {
+        format!("ssh:{}", self.hostname)
     }
 
     /// Tell an unreachable host from a worker that died holding the task.
