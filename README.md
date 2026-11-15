@@ -36,7 +36,7 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
 - FR sweep support in CLI output and corpus validation gating
 - Residual diagnostics printed to stderr on every run
 - **Second solver: `--solver mpie`** (subsectional mixed-potential EFIE) — handles near-ground currents and patterns, which the Hallen formulation does not, and also solves degree-3 (T/Y) junctions and closed loops; it is an alternative to the default Hallén solve for those. Opt-in and additive; the Hallen corpus is untouched. See [`docs/mpie-solver-scope.md`](docs/mpie-solver-scope.md)
-- **Sommerfeld surface-wave ground: `--ground-solver sommerfeld`** — a rigorous near-ground model in place of the reflection-coefficient approximation
+- **Sommerfeld surface-wave ground: `--ground-solver sommerfeld`** — corrects a straight wire's near-ground feedpoint impedance for the surface wave the reflection-coefficient approximation misses, where every segment is no longer than its height (declined otherwise) and with a caveat below 0.01 λ (FND-325); `--solver mpie` puts the surface wave into the solve itself
 - Modular crate workspace: parser, model, solver, accel, report, project, CLI, GUI
 
 ## Quick start

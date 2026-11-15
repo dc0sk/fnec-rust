@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-11-11
+last_updated: 2026-11-14
 ---
 
 # CLI Guide — fnec (v0.26.0)
@@ -39,7 +39,7 @@ Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
 | Option | Values | Default | Description |
 |--------|--------|---------|-------------|
 | `--solver` | `hallen` \| `pulse` \| `continuity` \| `sinusoidal` \| `mpie` | `hallen` | MoM solver to use (see below) |
-| `--ground-solver` | `rcm` \| `sommerfeld` | `rcm` | Near-ground model for a `GN` finite ground. `rcm` uses the normal-incidence scalar reflection coefficient; `sommerfeld` uses the exact Sommerfeld–Norton surface wave (PH9-CHK-006), which is what matters below ~0.1 λ. Corrects the feedpoint impedance of a single **straight** wire — one line of collinear segments, horizontal, vertical or tilted — with **one feed and no TL/NT network**; bent, mixed or side-by-side parallel wires, several feeds, or a network are declined with a warning and keep the `rcm` result (FND-206, FND-208). Currents and patterns are unaffected either way — for those, use `--solver mpie`. A run where the correction applies says so on an `info:` line, and `--output-format nec2d` refuses the flag over a finite ground (FND-286) |
+| `--ground-solver` | `rcm` \| `sommerfeld` | `rcm` | Near-ground model for a `GN` finite ground. `rcm` uses the normal-incidence scalar reflection coefficient; `sommerfeld` uses the exact Sommerfeld–Norton surface wave (PH9-CHK-006), which is what matters below ~0.1 λ. Corrects the feedpoint impedance of a single **straight** wire — one line of collinear segments, horizontal, vertical or tilted — with **one feed and no TL/NT network**; bent, mixed or side-by-side parallel wires, several feeds, or a network are declined with a warning and keep the `rcm` result (FND-206, FND-208). A mesh with a segment longer than its own height above ground is declined too, naming `--solver mpie` — the correction's reaction sum is unresolved there and read 2× to 500× wrong (FND-325) — and below 0.01 λ an applied correction carries a caveat: it reads R 5–20 % low there. Currents and patterns are unaffected either way — for those, use `--solver mpie`. A run where the correction applies says so on an `info:` line, and `--output-format nec2d` refuses the flag over a finite ground (FND-286) |
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
 | `--experimental-solver` | flag | off | Required to run `--solver pulse` or `continuity`, which are unvalidated (FND-080). Without it those modes are refused; with it every result carries a `CAVEAT` line (text) or `caveat` field (JSON) |
 | `--exec` | `cpu` \| `hybrid` \| `gpu` | `auto` (`cpu`, or `gpu` for a supported deck past this host's calibrated crossover — `fnec calibrate`; see the Execution modes notes) | Execution backend preference. `cpu` solves the FR points of a sweep in parallel (rayon; `RAYON_NUM_THREADS` bounds it) with deterministic ordered output. `hybrid` does that and runs a GPU lane beside the CPU pool, both taking points from one counter, for a deck the GPU solves when a hardware GPU is present (otherwise it says why and runs on the CPU only). `gpu` runs real wgpu kernels for the RP far-field and takes the **GPU-resident dense solve** on a free-space deck with no `LD`/`TL`/`NT` stamps and ≥ **16** segments; for such a point of ≥ 128 segments the host's Z-matrix is filled on the device too (a point the resident solve declines is filled in f64 on the CPU, FND-293; `fill_exec` in the `diag:` line says which), which warns, once, when the deck is below this host's calibrated crossover, where the device loses to the CPU (FND-185; nothing is said on an uncalibrated host). |
@@ -628,7 +628,7 @@ diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-1
 | `contact` | `yes` when the deck touches PEC and solved as its image problem |
 | `drive` | `voltage`, `current` (an `EX 4` source) or `planewave` |
 | `ground` | `free`, `pec`, `finite` |
-| `gsolver` | Over a finite ground: `rcm`, or `sommerfeld-applied` / `-declined` / `-declined-receive`; `mpie-exact` under `--solver mpie`, which fills the exact Sommerfeld kernels itself; `n/a` otherwise. With `sommerfeld-applied` only the feedpoint impedance carries the surface-wave correction. The row's V and I, the current table and the pattern come from the reflection-coefficient solve, so I ≠ V/Z, and an `info:` line says so once per run (FND-286) |
+| `gsolver` | Over a finite ground: `rcm`, or `sommerfeld-applied` / `-declined` / `-declined-resolution` (a segment longer than its height, FND-325) / `-declined-receive`; `mpie-exact` under `--solver mpie`, which fills the exact Sommerfeld kernels itself; `n/a` otherwise. With `sommerfeld-applied` only the feedpoint impedance carries the surface-wave correction. The row's V and I, the current table and the pattern come from the reflection-coefficient solve, so I ≠ V/Z, and an `info:` line says so once per run (FND-286) |
 | `loads` | Where the run's loads came from: `none`, `deck` (`LD` cards), `config` (`--loads-config`), `deck+config` |
 | `fill_exec` | Where the host Z-matrix was filled: always `cpu` (in f64) since FND-307. On a resident point (`solve_exec=gpu`) the device fills its own f32 matrix for its solve, and this f64 one is what its currents are checked against (`rel_res`); a point the device declines — before the solve (a load, a bend, a ground; FND-293) or at run time (no adapter, a lost device, a rejected answer) — is solved from it in f64, as `--exec cpu` and a `--hosts` worker do. It read `gpu` at 128 segments or more until FND-307, when the host matrix was the device's f32 fill. The key stays for the parity sweep and the FND-293 record |
 | `solve_exec`, `rp_exec`, `nf_exec` | The executor that produced the solve, the radiation pattern and the near field (`cpu`, `gpu`, or `none` when the stage did not run) |
@@ -768,6 +768,19 @@ segments). The low-height warning names both where they apply — the MPIE for o
 feed on one unbranched wire, straight or bent (where it is measured), the correction
 for a single straight wire — on the command line; the GUI and the bindings name
 their own MPIE setting.
+
+Where it is measured right (FND-325): every segment **no longer than its own
+height** above ground, and the antenna at **0.01 λ or more**. A segment longer than
+its height leaves the correction's midpoint reaction sum unresolved — a horizontal
+λ/2 dipole 0.02 m up on 0.238 m segments read 1185.64 + j132187.3 Ω against nec2c's
+177.86 + j255.89 — so such a deck is declined with a warning naming `--solver mpie`
+(`gsolver=sommerfeld-declined-resolution`), and keeps the `rcm` result; re-meshing
+finer is not offered, because a resolved mesh at that height falls in the next
+regime. Below 0.01 λ the correction applies but is first-order in the current and
+reads R 5–20 % low (0.002–0.01 λ, against nec2c on a λ/2 dipole and a 1.5 λ wire):
+the `info:` line says so, and the low-height warning names only the MPIE, which is
+within 1–3 % there. The low-height warning names the correction only where it
+applies inside both bounds.
 
 The correction is a feedpoint-impedance delta only: currents and patterns are
 unchanged, and bent or mixed geometry is declined — with an explicit warning —
@@ -1107,9 +1120,9 @@ Quick reference:
 | GH | Partial | A helix or spiral (nec2c's `helix`), read as NEC-2 / nec2c reads it; `--solver mpie` only, as `GA` |
 | GC | Full | The taper of the `GW` directly before it, whose radius is 0: `GC 0 0 RDEL RAD1 RAD2`, each segment `RDEL` times the one before, radii geometric from `RAD1` to `RAD2`, as nec2c's `wire` builds it. Both solvers take each segment's radius; the Hallén solve models a step where two wires join but under-models a taper along one wire, and says so, naming `--solver mpie` (FND-252). A segment tapered under 2 radii (or 3 µm) is refused |
 | GN type −1 | Full | Explicit free space (same as omitting `GN`) |
-| GN type 0 | Partial | Finite ground via a normal-incidence scalar reflection coefficient on the image; accurate for heights ≥ ~0.2 λ. Below 0.1 λ it misses the surface wave and warns — use `--ground-solver sommerfeld` or `--solver mpie` |
+| GN type 0 | Partial | Finite ground via a normal-incidence scalar reflection coefficient on the image; accurate for heights ≥ ~0.2 λ. Below 0.1 λ it misses the surface wave and warns — use `--solver mpie`, or `--ground-solver sommerfeld` for a straight wire whose segments are no longer than their height, at 0.01 λ or more (FND-325) |
 | GN type 1 | Full | Perfect-conductor (PEC) image method; ground-mounted wires (monopoles) solved by explicit images on `--solver hallen` (FND-082) — with voltage or current sources, loads, `TL`/`NT` networks and plane waves |
-| GN type 2 | Partial | Aliases the GN 0 path by default; the true Sommerfeld surface wave comes from `--ground-solver sommerfeld` (feedpoint Z of a straight wire) or `--solver mpie` (currents and patterns, any geometry above ground) |
+| GN type 2 | Partial | Aliases the GN 0 path by default; the true Sommerfeld surface wave comes from `--ground-solver sommerfeld` (feedpoint Z of a straight wire whose segments are no longer than their height; caveated below 0.01 λ, FND-325) or `--solver mpie` (currents and patterns, any geometry above ground) |
 | GN fields | — | Read by position, `GN I1 I2 I3 I4 F1 F2 F3 F4 F5 F6` (FND-283). A radial-wire screen (`I2` ≠ 0) over `GN 0` or `GN 2` is refused — nec2c's currents change with it and fnec does not model one; over `GN 1`/`GN -1` it is ignored with a warning, as nec2c ignores it. `I3`/`I4` (never read by NEC-2) and a second medium in `F3`–`F6` (read only by `RP` modes 2/3/5/6) are ignored with a warning |
 | EX type 0 | Full | Applied-field voltage-gap source, on every solver path. I4's units digit 1 prints the input impedance over a sweep, normalized to F3 (`INPUT_IMPEDANCE`, FND-309); 2–9 are refused |
 | EX type 1 | Partial | Incident plane wave, linear polarization — solves on `--solver hallen` (receiving antenna → induced currents, no feedpoint), including degree-2 junctioned geometry, and degree-3+ junctions and closed loops on the section graph (FND-162 stage 5; loads included, FND-197); in free space and over perfect or finite ground, with the ground-reflected wave (FND-170; `--ground-solver sommerfeld` does not apply to a receive solve, and says so), including wires touching perfect ground — from below the ground plane refused. `--solver pulse` fails fast |
