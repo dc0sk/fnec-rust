@@ -1,16 +1,14 @@
 use base64::Engine;
-use std::io::{BufRead, Read, Write};
+use std::io::{BufRead, Write};
 
+use crate::protocol::{read_bounded_line, BoundedRead};
 use crate::protocol::{ErrorCode, Impedance, TaskMessage, TaskResult};
 use crate::solve::SolveError;
 
-/// The protocol's maximum message size, in bytes — and now actually enforced.
-///
-/// `protocol.rs` has documented "Maximum message size: 4 MiB" since the crate's
-/// first commit, and nothing checked it: the read loop used `reader.lines()`,
-/// which grows a `String` until the line ends. A peer that never sends a newline
-/// takes the process down (FND-096).
-pub const MAX_LINE_BYTES: u64 = 4 * 1024 * 1024;
+/// The protocol's maximum message size, re-exported from its one owner,
+/// [`crate::protocol::MAX_LINE_BYTES`] — it lived here until the controller's
+/// read needed it too (FND-331).
+pub use crate::protocol::MAX_LINE_BYTES;
 
 /// Run the worker stdio event loop.
 ///
@@ -21,38 +19,23 @@ pub fn run_worker_stdio<R: BufRead, W: Write>(reader: R, mut writer: W) {
     let mut reader = reader;
     let mut buf: Vec<u8> = Vec::new();
     loop {
-        buf.clear();
         // Bounded, not `reader.lines()`. That grew a String until the line ended
         // or the machine did, while `protocol.rs` documented a 4 MiB maximum that
         // nothing enforced — a limit that exists only in prose is not a limit
-        // (FND-096). `take` caps the read itself, so the allocation never happens.
-        let n = match Read::take(&mut reader, MAX_LINE_BYTES + 1).read_until(b'\n', &mut buf) {
-            Ok(0) => break, // EOF
-            Ok(n) => n,
-            Err(_) => break,
-        };
-        if n as u64 > MAX_LINE_BYTES {
-            // Drain the rest of the over-long line, or its tail would be read as
-            // the next message and answered as if it were one.
-            let mut sink = Vec::new();
-            loop {
-                sink.clear();
-                match Read::take(&mut reader, MAX_LINE_BYTES).read_until(b'\n', &mut sink) {
-                    Ok(0) => break,
-                    Ok(k) => {
-                        if sink.last() == Some(&b'\n') || (k as u64) < MAX_LINE_BYTES {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
+        // (FND-096). The read is the protocol's one bounded read, shared with the
+        // controller's side (FND-331): it caps the read itself, so the
+        // allocation never happens, and drains an over-long line's tail.
+        match read_bounded_line(&mut reader, &mut buf) {
+            Ok(BoundedRead::Eof) | Err(_) => break,
+            Ok(BoundedRead::Line) => {}
+            Ok(BoundedRead::TooLong) => {
+                let _ = writeln!(
+                    writer,
+                    r#"{{"status":"error","task_id":"unknown","frequency_hz":0.0,"error_code":"resource_exhausted","error_message":"task line exceeds the {MAX_LINE_BYTES}-byte protocol maximum","warnings":[]}}"#
+                );
+                let _ = writer.flush();
+                continue;
             }
-            let _ = writeln!(
-                writer,
-                r#"{{"status":"error","task_id":"unknown","frequency_hz":0.0,"error_code":"resource_exhausted","error_message":"task line exceeds the {MAX_LINE_BYTES}-byte protocol maximum","warnings":[]}}"#
-            );
-            let _ = writer.flush();
-            continue;
         }
         let line = String::from_utf8_lossy(&buf).into_owned();
         let trimmed = line.trim();

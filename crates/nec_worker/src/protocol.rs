@@ -4,7 +4,8 @@
 //! Wire protocol types shared between controller and worker.
 //!
 //! All messages are newline-delimited JSON (one object per line, no embedded newlines).
-//! Maximum message size: 4 MiB.
+//! Maximum message size: 4 MiB ([`MAX_LINE_BYTES`]), enforced on both ends by
+//! [`read_bounded_line`].
 
 #[cfg(test)]
 mod tests {
@@ -258,6 +259,69 @@ mod tests {
 }
 
 use serde::{Deserialize, Serialize};
+use std::io::{BufRead, Read};
+
+/// The protocol's maximum message size, in bytes — enforced on BOTH ends.
+///
+/// This module has documented "Maximum message size: 4 MiB" since the crate's
+/// first commit, and for a long time nothing checked it: each end read with
+/// `lines()`, which grows a `String` until the line ends, so a peer that never
+/// sends a newline takes the reading process down. The worker's read was bounded
+/// first (FND-096), with the constant in `worker.rs`; the controller's read
+/// stayed unbounded (FND-331). One owner here, and one read
+/// ([`read_bounded_line`]) both ends call, so the two cannot diverge again.
+pub const MAX_LINE_BYTES: u64 = 4 * 1024 * 1024;
+
+/// What one [`read_bounded_line`] call read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoundedRead {
+    /// End of stream: nothing was read.
+    Eof,
+    /// One line, in the caller's buffer (with its newline, unless the stream
+    /// ended without one).
+    Line,
+    /// The line exceeded [`MAX_LINE_BYTES`]. It was not kept, and its tail has
+    /// been drained up to and including its newline, so the next read starts at
+    /// the next message: the stream is in sync.
+    TooLong,
+}
+
+/// Read one line of at most [`MAX_LINE_BYTES`] bytes (newline included) into
+/// `buf`, which is cleared first.
+///
+/// Bounded on the READ itself — `take` caps what `read_until` may append, so an
+/// over-long line is never allocated (FND-096). An over-long line's remainder is
+/// drained to its newline, or its tail would be read as the next message. A read
+/// error while draining still reports `TooLong`: the line was refused either
+/// way, and the caller's next read surfaces the error.
+pub fn read_bounded_line<R: BufRead + ?Sized>(
+    reader: &mut R,
+    buf: &mut Vec<u8>,
+) -> std::io::Result<BoundedRead> {
+    buf.clear();
+    let n = Read::take(&mut *reader, MAX_LINE_BYTES + 1).read_until(b'\n', buf)?;
+    if n == 0 {
+        return Ok(BoundedRead::Eof);
+    }
+    if n as u64 <= MAX_LINE_BYTES {
+        return Ok(BoundedRead::Line);
+    }
+    buf.clear();
+    let mut sink = Vec::new();
+    loop {
+        sink.clear();
+        match Read::take(&mut *reader, MAX_LINE_BYTES).read_until(b'\n', &mut sink) {
+            Ok(0) => break,
+            Ok(k) => {
+                if sink.last() == Some(&b'\n') || (k as u64) < MAX_LINE_BYTES {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    Ok(BoundedRead::TooLong)
+}
 
 /// Solver configuration included with each task message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

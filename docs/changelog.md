@@ -47,6 +47,29 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   listed in the run summary. `docs/release-process.md` step 2 says what each
   refusal word asks for.
 
+- **The controller's read of a worker's answer is bounded** (FND-331). The
+  distributed controller read each worker's stdout with an unbounded `lines()`,
+  so a worker (local or over `--hosts`) writing a line without end grew one
+  string until the controller aborted on out-of-memory; the 15-minute deadline
+  bounded the wait, not the allocation. It now reads with the same bounded,
+  draining read the worker has used on its own stdin since FND-096: a line past
+  the protocol's 4 MiB maximum is refused without being allocated, its tail is
+  drained so the next line is read as itself, and the task fails with "the
+  worker's result line exceeds the 4194304-byte protocol maximum" while the
+  worker stays in the pool. `MAX_LINE_BYTES` and that read now live once, in
+  `nec_worker::protocol`, for both ends.
+
+### Docs
+
+- **The roadmap's gaps table says which gaps the tree has closed.** GAP-004,
+  GAP-010, GAP-011, GAP-012 and GAP-014 are marked resolved, each with the PR and
+  file that closed it; GAP-002 and GAP-008 are resolved by the links they lacked
+  (`docs/cli-guide.md` now points to `docs/nec4-support.md`, and
+  `docs/contributing.md` to `docs/dependency-policy.md`); GAP-009 stays open
+  pending a maintainer's decision. BLK-001 and BLK-002 carry their resolution
+  dates. FND-320's file counts are defined: 42 test files at filing (the
+  ledger's earlier 39 could not be reproduced), 41 migrated by #659, 1 left.
+
 ## [0.26.0] — 2026-11-01 — As NEC-2 reads it
 
 ### Added
@@ -198,9 +221,9 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   samples, so `n/a` no longer averages in as a 0.
 
 - **The CLI tests build every scratch path through `common::TempDeck` or
-  `common::TempDir`** (FND-320, #656, #659). 41 test files built theirs from
-  `std::env::temp_dir()` by hand, each with its own copy of the uniqueness rule,
-  16 on `SystemTime` nanoseconds alone (FND-319's mechanism). `TempDir` is
+  `common::TempDir`** (FND-320, #656, #659). 41 of the 42 test files calling
+  `std::env::temp_dir()` built theirs by hand, each with its own copy of the
+  uniqueness rule, 16 on `SystemTime` nanoseconds alone (FND-319's mechanism). `TempDir` is
   `TempDeck`'s directory sibling, with the same per-process counter. A new gate,
   `scripts/check-scratch-paths.py` with its self-test, run by `check-all.sh` and
   CI, refuses a hand-built scratch path outside `common/mod.rs` unless
