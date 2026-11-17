@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-11-14
+last_updated: 2026-11-15
 ---
 
 # Changelog
@@ -85,6 +85,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   pending a maintainer's decision. BLK-001 and BLK-002 carry their resolution
   dates. FND-320's file counts are defined: 42 test files at filing (the
   ledger's earlier 39 could not be reproduced), 41 migrated by #659, 1 left.
+- **GAP-009 is recorded as open in every tracker.** `docs/requirements.md` and
+  the requirements register called it resolved while the roadmap called it
+  open; all three now say open and why: the Phase 3 benchmark's times are
+  estimates, its "blank project" starts from an existing deck, its only
+  comparator is xnec2c, and it was never re-run on the redesigned GUI.
+- **Two spliced tables are whole again** (FND-349, FND-350). In
+  `docs/card-support-matrix.md` an excitation paragraph inside the table, which
+  still said only `EX` type 0 solves, sits above it and says types 0 to 5 solve.
+  In `docs/json-output-schema.md` the `fnec converge` example closes its fence
+  and its field table is back under its own heading, not under `fnec match`.
 
 ## [0.26.0] — 2026-11-01 — As NEC-2 reads it
 

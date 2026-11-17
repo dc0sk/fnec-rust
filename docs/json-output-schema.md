@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/json-output-schema.md
 status: living
-last_updated: 2026-11-14
+last_updated: 2026-11-15
 ---
 
 # fnec JSON Output Schema (v1)
@@ -227,6 +227,30 @@ not contract) is `null`.
     }
   ],
   "all_settled": true
+}
+```
+
+| Field | Type | Description |
+|:------|:-----|:------------|
+| `schema` | `string` | `"fnec-converge/1"`. |
+| `solver`, `ends` | `string` | The `--solver` and `--ends` in force. |
+| `factors` | `integer[]` | The mesh factors, coarsest first. |
+| `tol` | `object` | `ohm` and `pct`: settled when the tail ≤ max(ohm, pct % × \|Z\| at the finest mesh) on each axis. |
+| `rows[]` | `object[]` | One per (frequency, source) feedpoint row of the deck, in the main report's order. |
+| `rows[].freq_mhz`, `tag`, `seg` | `number`, `integer` | The row's frequency and the deck's own feedpoint segment. |
+| `rows[].refs[]` | `object[]` | Every segment reference the refinement mapped (`EX`, `LD`, `NT`, `TL`): the deck's `tag`/`seg`, whether it is a wire's first or last segment (`touches_end`), and its segment at each factor (`mapped`, in `factors` order). |
+| `rows[].meshes[]` | `object[]` | Per factor: the structure's segment count, the impedance, and the `route=` the solve took (its `diag:` line). |
+| `rows[].steps` | `object` | `r`, `x`: the absolute step between consecutive meshes. |
+| `rows[].tail` | `object \| null` | `r`, `x`: the geometric tail of the last two steps (`null` per axis when they do not contract). `null` with two meshes. |
+| `rows[].class` | `string \| null` | `"settling"`, `"diverging"` or `"log-drift"` (four meshes or more); `null` with two. |
+| `rows[].extrapolated` | `object \| null` | The finest mesh plus the tail, only when `settled` is `true`. |
+| `rows[].settled` | `true \| false \| "undecided"` | `"undecided"` with two meshes: a step, no verdict. |
+| `rows[].notes` | `string[]` | Dropped cards, a re-interpolated taper, a mesh under nec2c's thin-kernel limit, a reference touching a wire end. |
+| `all_settled` | `true \| false \| "undecided"` | `false` if any row is not settled; else `"undecided"` if any row is; else `true`. |
+
+Exit status as in text mode: 0 when the study completed (settled or not), 1 on
+a refusal or solver error, 2 on a usage error. A refusal before any mesh is
+solved writes nothing to stdout.
 
 ## `fnec match` output (`fnec-match/1`)
 
@@ -259,26 +283,6 @@ above: the matching-network helper's document, schema `fnec-match/1`
 
 | Field | Type | Description |
 |:------|:-----|:------------|
-| `schema` | `string` | `"fnec-converge/1"`. |
-| `solver`, `ends` | `string` | The `--solver` and `--ends` in force. |
-| `factors` | `integer[]` | The mesh factors, coarsest first. |
-| `tol` | `object` | `ohm` and `pct`: settled when the tail ≤ max(ohm, pct % × \|Z\| at the finest mesh) on each axis. |
-| `rows[]` | `object[]` | One per (frequency, source) feedpoint row of the deck, in the main report's order. |
-| `rows[].freq_mhz`, `tag`, `seg` | `number`, `integer` | The row's frequency and the deck's own feedpoint segment. |
-| `rows[].refs[]` | `object[]` | Every segment reference the refinement mapped (`EX`, `LD`, `NT`, `TL`): the deck's `tag`/`seg`, whether it is a wire's first or last segment (`touches_end`), and its segment at each factor (`mapped`, in `factors` order). |
-| `rows[].meshes[]` | `object[]` | Per factor: the structure's segment count, the impedance, and the `route=` the solve took (its `diag:` line). |
-| `rows[].steps` | `object` | `r`, `x`: the absolute step between consecutive meshes. |
-| `rows[].tail` | `object \| null` | `r`, `x`: the geometric tail of the last two steps (`null` per axis when they do not contract). `null` with two meshes. |
-| `rows[].class` | `string \| null` | `"settling"`, `"diverging"` or `"log-drift"` (four meshes or more); `null` with two. |
-| `rows[].extrapolated` | `object \| null` | The finest mesh plus the tail, only when `settled` is `true`. |
-| `rows[].settled` | `true \| false \| "undecided"` | `"undecided"` with two meshes: a step, no verdict. |
-| `rows[].notes` | `string[]` | Dropped cards, a re-interpolated taper, a mesh under nec2c's thin-kernel limit, a reference touching a wire end. |
-| `all_settled` | `true \| false \| "undecided"` | `false` if any row is not settled; else `"undecided"` if any row is; else `true`. |
-
-Exit status as in text mode: 0 when the study completed (settled or not), 1 on
-a refusal or solver error, 2 on a usage error. A refusal before any mesh is
-solved writes nothing to stdout.
-
 | `schema` | `string` | `"fnec-match/1"`. |
 | `blocks[]` | `array` | One block per matched frequency point: one for `--z`, one per record of the deck's solve (its `FR` card or `--sweep-config`), in solve order. |
 | `blocks[].freq_mhz` | `number` | The frequency the component values are for. |
