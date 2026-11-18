@@ -172,12 +172,16 @@ pub(crate) fn check_admissible(deck: &NecDeck, options: &RunOptions) -> Result<(
 }
 
 /// The comment cards' text as NEC-2 reads it: columns 3 to 78 of each `CM`/`CE`
-/// card before the geometry, tabs and all.
+/// card before the geometry, tabs and all. A `#`- or space-led line is no card
+/// (nec2c's `load_line`, FND-329), by the parser's own rule.
 fn comments(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     for raw in text.lines() {
         let line = raw.trim_end_matches('\r');
-        if line.trim().is_empty() || line.trim_start().starts_with('\'') {
+        if nec_parser::is_comment_line(line)
+            || line.trim().is_empty()
+            || line.trim_start().starts_with('\'')
+        {
             continue;
         }
         let head: String = line

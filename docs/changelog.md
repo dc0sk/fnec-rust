@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-11-15
+last_updated: 2026-11-18
 ---
 
 # Changelog
@@ -17,6 +17,22 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A deck line beginning with `#` or a space is a comment, as nec2c reads it;
+  an indented card is no longer applied** (FND-329, #671). nec2c's `load_line`
+  discards a line whose first character is `#` or a space; fnec trimmed every
+  line first, so ` LD 0 1 11 11 100 0 0` on a 10 m dipole loaded 100 Ω that
+  nec2c never applies — 163.69 − j57.72 Ω, exit 0, no warning, where nec2c
+  reads 64.355 − j55.751 — and ` GW 2 …` built a parasitic element nec2c does
+  not have. The first byte now decides, before the trim, in the geometry, the
+  program cards and the CM/CE block alike: fnec gives 63.687 − j57.724 for the
+  indented load, with a warning naming the line when its first word is a card
+  (`remove the indent to make it a card`); `#` lines (`#LD …`, `# a note`),
+  which fnec refused as unknown cards, are skipped silently, also between a
+  tapered `GW` and its `GC`; and a tab-led line, which nec2c refuses and fnec
+  solved as a card, is refused by name ("remove the tab, or start the line with
+  `#`"). The NEC-2D output's COMMENTS block reads the same rule. `'` stays a
+  comment, a documented superset of nec2c. See the card-support matrix's
+  [Line conventions](card-support-matrix.md#line-conventions).
 - **`--ground-solver sommerfeld` declines a mesh coarser than its height instead
   of returning a reactance up to 500× wrong** (FND-325). Its reaction sum samples
   the reflected kernel once per segment pair, and where a segment is longer than
