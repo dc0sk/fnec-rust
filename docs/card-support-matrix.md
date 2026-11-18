@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/card-support-matrix.md
 status: living
-last_updated: 2026-11-15
+last_updated: 2026-11-18
 ---
 
 # NEC Card Support Matrix
@@ -12,6 +12,35 @@ This document is the canonical reference for supported, partial, and deferred NE
 Every field of every card fnec parses is accounted for by one table, `nec_model::card::FIELD_DISPOSITION`, which two tests hold to the parser and the solver (the guard against a field accepted and never read, FND-280/283/285/298); the fields fnec ignores are listed in [Fields fnec reads and does not use](#fields-fnec-reads-and-does-not-use).
 
 Legend: **Full** — complete implementation; **Partial** — accepted and produces useful output, but some semantics are deferred (see Notes column); **Deferred** — parsed for portability but ignored at runtime with an explicit warning; **N/A** — not applicable or not in scope.
+
+## Line conventions
+
+A deck line's **first character**, before anything is trimmed, decides whether it
+is a card, as nec2c's `load_line` decides it (FND-329) — in the geometry, the
+program cards and the `CM`/`CE` block alike:
+
+- A line beginning with `#` is a comment, skipped silently (nec2c's documented
+  form). `#LD …` is no card.
+- A line beginning with a **space** is a comment too — nec2c discards it whole —
+  so an indented card is **not applied**: ` LD 0 1 11 11 100 0 0` loads nothing,
+  ` GW 2 …` builds no wire. fnec warns when the indented line's first word is a
+  card it knows ("line N: … begins with a space, so NEC-2 reads it as a comment
+  and fnec skips it too …; remove the indent to make it a card"); other
+  indented text is silent. Before FND-329 fnec trimmed the indent and applied the
+  card (164 Ω where nec2c reads 64 Ω).
+- A line beginning with a **tab** is refused by name: nec2c reads its mnemonic as
+  the tab and the next character and refuses the deck, so neither reading as a
+  card nor as a comment would be nec2c's. Remove the tab to make it a card, or
+  start the line with `#`. A line of whitespace alone is a blank line, tab or not.
+- A line starting with `'` (after any indent) is a comment: 4nec2's convention,
+  which nec2c refuses (exit 255, a data card error). fnec accepts it on purpose, a
+  documented superset like `$NAME` templates — not a finding.
+- A comment or blank line between a tapered `GW` (radius 0) and its `GC` is no
+  card between them; a `CM` there still is.
+- Mnemonics are case-insensitive, fields are separated by whitespace or commas
+  (FND-237), and CRLF line endings are read as LF.
+
+Pinned against nec2c 1.3.1 in `apps/nec-cli/tests/line_comments_nec2c.rs`.
 
 ## Geometry cards
 
@@ -200,8 +229,8 @@ warning saying why. **Refused** cards would — skipping one solves a different
 antenna (before `GS` was modelled, the feet-unit dipole of `gs_card_nec2c.rs`
 with its `GS 0 0 .3048` skipped was a wire 3.28× too long: 227.14 + j451.81 Ω in
 nec2c, where nec2c scaling it gives 79.042 + j45.909) — so the deck is refused with an error naming the card. A mnemonic
-in neither list is refused as unknown, as nec2c refuses it. A line starting with
-`'` is a comment. This table and `nec_parser::OTHER_CARDS` are checked against
+in neither list is refused as unknown, as nec2c refuses it. Which lines are
+comments is in [Line conventions](#line-conventions). This table and `nec_parser::OTHER_CARDS` are checked against
 each other (`crates/nec_parser/tests/card_matrix.rs`).
 
 | Card | Treatment | What it is, and why |

@@ -129,12 +129,13 @@ fn error_card(e: &ParseError) -> Option<&str> {
         ParseError::UnknownCard { mnemonic, .. }
         | ParseError::RefusedCard { mnemonic, .. }
         | ParseError::IgnoredCard { mnemonic, .. }
-        | ParseError::GeometryAfterGe { mnemonic, .. } => Some(mnemonic),
+        | ParseError::GeometryAfterGe { mnemonic, .. }
+        | ParseError::IndentedCard { mnemonic, .. } => Some(mnemonic),
         ParseError::IgnoredField { card, .. }
         | ParseError::BadField { card, .. }
         | ParseError::UnsupportedValue { card, .. }
         | ParseError::TooFewFields { card, .. } => Some(card),
-        ParseError::TaperPairing { .. } => None,
+        ParseError::TaperPairing { .. } | ParseError::TabLedLine { .. } => None,
     }
 }
 

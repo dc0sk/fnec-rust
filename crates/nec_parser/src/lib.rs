@@ -83,6 +83,18 @@ pub enum ParseError {
         line: usize,
         error: nec_model::card::TaperPairingError,
     },
+    /// A line beginning with a space whose first word is a card fnec knows: NEC-2
+    /// reads every space-led line as a comment (nec2c's `load_line`), and so does
+    /// fnec, so the card is skipped. A warning (FND-329).
+    IndentedCard {
+        line: usize,
+        mnemonic: String,
+        /// The line without its indent, shortened to [`QUOTE_CHARS`] characters.
+        text: String,
+    },
+    /// A line beginning with a tab: nec2c reads its mnemonic as the tab and the
+    /// next character, which names no card, and refuses the deck. Fatal (FND-329).
+    TabLedLine { line: usize },
     /// A card did not have enough fields.
     TooFewFields {
         line: usize,
@@ -147,6 +159,21 @@ impl std::fmt::Display for ParseError {
                  and nec2c refuses a geometry card after it; move it above the GE card"
             ),
             ParseError::TaperPairing { line, error } => write!(f, "line {line}: {error}"),
+            ParseError::IndentedCard {
+                line,
+                mnemonic,
+                text,
+            } => write!(
+                f,
+                "line {line}: ` {text}` begins with a space, so NEC-2 reads it as a comment \
+                 and fnec skips it too, as no {mnemonic} card; remove the indent to make it a card"
+            ),
+            ParseError::TabLedLine { line } => write!(
+                f,
+                "line {line} begins with a tab; NEC-2 reads a card's mnemonic from the line's \
+                 first two characters, and nec2c refuses the deck; remove the tab to make it a \
+                 card, or start the line with `#` to make it a comment"
+            ),
             ParseError::TooFewFields {
                 line,
                 card,
@@ -239,6 +266,31 @@ pub const OTHER_CARDS: &[(&str, OtherCard)] = &[
     ),
 ];
 
+/// The cards [`parse`] reads itself, one per arm of its card match. With
+/// [`OTHER_CARDS`] these are every mnemonic fnec knows.
+const PARSED_CARDS: [&str; 22] = [
+    "CM", "CE", "GW", "GC", "GE", "GX", "GA", "GH", "GS", "GM", "GR", "GN", "EX", "NE", "NH", "FR",
+    "RP", "LD", "TL", "NT", "PT", "EN",
+];
+
+/// Whether an upper-case mnemonic names a card fnec parses, ignores or refuses.
+fn is_known_card(mnemonic: &str) -> bool {
+    PARSED_CARDS.contains(&mnemonic) || OTHER_CARDS.iter().any(|(m, _)| *m == mnemonic)
+}
+
+/// How many characters of a skipped line a warning quotes.
+pub const QUOTE_CHARS: usize = 80;
+
+/// Whether a deck line is a comment by its first byte, as nec2c's `load_line`
+/// reads it: a line beginning with `#` or a space is discarded whole, in the
+/// geometry, the program cards and the CM/CE block alike, before its mnemonic is
+/// read (FND-329). Only the first byte counts — the line is not trimmed first. A
+/// line beginning with `'` (4nec2's convention) is a comment too, but fnec's
+/// alone: [`parse`] reads it after the trim.
+pub fn is_comment_line(raw_line: &str) -> bool {
+    matches!(raw_line.as_bytes().first(), Some(b'#' | b' '))
+}
+
 /// Result of parsing a NEC deck.
 ///
 /// Non-fatal warnings (cards that cannot change the solved problem) are
@@ -268,16 +320,47 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
     let mut last_gn_type: Option<i32> = None;
     // A GW of radius 0 just parsed: (its line, tag, segment count). nec2c reads
     // the very next card as its GC, raw, so nothing may come between — not a CM,
-    // not a `'` comment; only a blank line, which is no card.
+    // not a `'` comment; only a blank line or a `#`/space comment line, which
+    // nec2c's `load_line` discards before the GC is read (FND-329).
     let mut taper_pending: Option<(usize, u32, u32)> = None;
 
     for (idx, raw_line) in input.lines().enumerate() {
         let lineno = idx + 1;
+
+        // FND-329: the first byte decides, before the trim. nec2c discards a line
+        // beginning with `#` or a space; fnec trimmed the indent away and read
+        // ` LD …` as a load nec2c never applies. An indented known card is skipped
+        // with a warning; a `#` note and other indented text are silent.
+        if is_comment_line(raw_line) {
+            if raw_line.starts_with(' ') {
+                let text = raw_line.trim();
+                let mnemonic = split_mnemonic(text).0.to_ascii_uppercase();
+                if is_known_card(&mnemonic) {
+                    let mut quoted: String = text.chars().take(QUOTE_CHARS).collect();
+                    if text.chars().nth(QUOTE_CHARS).is_some() {
+                        quoted.push('…');
+                    }
+                    warnings.push(ParseError::IndentedCard {
+                        line: lineno,
+                        mnemonic,
+                        text: quoted,
+                    });
+                }
+            }
+            continue;
+        }
+
         let line = raw_line.trim();
 
         // Skip blank lines and lines that are entirely whitespace.
         if line.is_empty() {
             continue;
+        }
+
+        // A tab-led line is a card in no reading nec2c has: its mnemonic is the
+        // tab and the next character, which nec2c refuses (FND-329).
+        if raw_line.starts_with('\t') {
+            return Err(ParseError::TabLedLine { line: lineno });
         }
 
         if let Some((gw_line, tag, _)) = taper_pending {
@@ -1953,6 +2036,170 @@ EN
         assert_eq!(r.deck.cards.len(), 2);
     }
 
+    /// FND-329's dipole: line 1 CM, 2 CE, 3 GW, 4 GE, 5 FR, 6 the line under test,
+    /// 7 EX, 8 EN.
+    fn dipole_with(line6: &str) -> String {
+        format!(
+            "CM d\nCE\nGW 1 21 0 0 -5 0 0 5 0.001\nGE 0\nFR 0 1 0 0 14 0\n{line6}\n\
+             EX 0 1 11 0 1 0\nEN\n"
+        )
+    }
+
+    fn loads(r: &ParseResult) -> usize {
+        r.deck
+            .cards
+            .iter()
+            .filter(|c| matches!(c, Card::Ld(_)))
+            .count()
+    }
+
+    /// nec2c's `load_line` discards a line whose first byte is a space: an
+    /// indented card is a comment, skipped with a warning naming the line.
+    #[test]
+    fn a_space_led_card_is_a_comment_with_a_warning() {
+        for line in [
+            " LD 0 1 11 11 100 0 0",
+            "  LD 0 1 11 11 100 0 0",
+            " \tLD 0 1 11 11 100 0 0",
+        ] {
+            let r = parse(&dipole_with(line)).expect("parses");
+            assert_eq!(loads(&r), 0, "{line:?} was applied");
+            assert!(
+                !r.deck.program_cards.iter().any(|c| c.mnemonic == "LD"),
+                "{line:?} is in the program-card echo"
+            );
+            assert_eq!(r.warnings.len(), 1, "{line:?}: {:?}", r.warnings);
+            let w = &r.warnings[0];
+            assert!(
+                matches!(w, ParseError::IndentedCard { line: 6, mnemonic, .. } if mnemonic == "LD"),
+                "{line:?}: {w:?}"
+            );
+            let says = w.to_string();
+            assert!(
+                says.contains("line 6")
+                    && says.contains("LD 0 1 11 11 100 0 0")
+                    && says.contains("comment")
+                    && says.contains("remove the indent"),
+                "{says}"
+            );
+        }
+    }
+
+    /// The rule holds in the geometry section too: an indented GW builds no wire.
+    #[test]
+    fn a_space_led_geometry_card_builds_no_wire() {
+        let r = parse(
+            "GW 1 21 0 0 -5 0 0 5 0.001\n GW 2 21 1 0 -5 1 0 5 0.001\nGE 0\nEX 0 1 11 0 1 0\nEN\n",
+        )
+        .expect("parses");
+        let wires = r
+            .deck
+            .cards
+            .iter()
+            .filter(|c| matches!(c, Card::Gw(_)))
+            .count();
+        assert_eq!(wires, 1);
+        assert!(matches!(
+            r.warnings.as_slice(),
+            [ParseError::IndentedCard { line: 2, mnemonic, .. }] if mnemonic == "GW"
+        ));
+    }
+
+    /// `#` is nec2c's advertised comment: skipped, silent, wherever it stands —
+    /// `#LD` is not an unknown card `#LD`.
+    #[test]
+    fn a_hash_line_is_a_silent_comment() {
+        for line in ["#LD 0 1 11 11 100 0 0", "# a note", "#"] {
+            let r = parse(&dipole_with(line)).expect("parses");
+            assert_eq!(loads(&r), 0, "{line:?}");
+            assert!(r.warnings.is_empty(), "{line:?}: {:?}", r.warnings);
+        }
+    }
+
+    /// Indented text that names no card is silent, as a `#` note is.
+    #[test]
+    fn an_indented_note_is_a_silent_comment() {
+        for line in ["  a note about the load", " 'quoted", "  #"] {
+            let r = parse(&dipole_with(line)).expect("parses");
+            assert!(r.warnings.is_empty(), "{line:?}: {:?}", r.warnings);
+        }
+    }
+
+    /// A tab-led line is a card in no reading nec2c has (it refuses it), so fnec
+    /// refuses it by name with both remedies.
+    #[test]
+    fn a_tab_led_line_is_refused_by_name() {
+        for line in ["\tLD 0 1 11 11 100 0 0", "\t# a note", "\tCM x"] {
+            let err = parse(&dipole_with(line)).err().expect("refused");
+            assert_eq!(err, ParseError::TabLedLine { line: 6 }, "{line:?}");
+            let says = err.to_string();
+            assert!(
+                says.contains("line 6")
+                    && says.contains("tab")
+                    && says.contains("remove the tab")
+                    && says.contains("start the line with `#`"),
+                "{says}"
+            );
+        }
+        // A tab-led CM as line 1, the comment block included.
+        assert_eq!(
+            parse("\tCM x\nCE\nGW 1 21 0 0 -5 0 0 5 0.001\nGE 0\nEN\n").err(),
+            Some(ParseError::TabLedLine { line: 1 })
+        );
+    }
+
+    /// A line of whitespace alone stays a blank line, tab or not: it holds no card.
+    #[test]
+    fn a_whitespace_only_line_is_blank() {
+        for line in ["\t", "\t \t", ""] {
+            let r = parse(&dipole_with(line)).expect("parses");
+            assert!(r.warnings.is_empty(), "{line:?}: {:?}", r.warnings);
+        }
+    }
+
+    /// nec2c reads a tapered wire's GC through the same `load_line`, so a comment
+    /// line between the GW and its GC is no card between them.
+    #[test]
+    fn a_comment_line_between_a_taper_and_its_gc_is_skipped() {
+        for note in ["# note", " a note", " LD 0 1 1 1 5 0 0"] {
+            let r = parse(&format!(
+                "GW 1 11 0 0 -5 0 0 5 0\n{note}\nGC 0 0 1.05 0.001 0.002\nGE 0\nEN\n"
+            ))
+            .unwrap_or_else(|e| panic!("{note:?}: {e}"));
+            assert!(r.deck.cards.iter().any(|c| matches!(c, Card::Gc(_))));
+        }
+        // Negative control: a CM between them is a card, refused as before.
+        assert!(matches!(
+            parse("GW 1 11 0 0 -5 0 0 5 0\nCM x\nGC 0 0 1.05 0.001 0.002\nGE 0\nEN\n"),
+            Err(ParseError::TaperPairing { .. })
+        ));
+    }
+
+    /// Negative controls: a card at column 1 is a card, in either case, and `'`
+    /// stays fnec's 4nec2 comment.
+    #[test]
+    fn a_column_one_card_is_still_a_card() {
+        for line in ["LD 0 1 11 11 100 0 0", "ld 0 1 11 11 100 0 0"] {
+            let r = parse(&dipole_with(line)).expect("parses");
+            assert_eq!(loads(&r), 1, "{line:?}");
+            assert!(r.warnings.is_empty(), "{line:?}: {:?}", r.warnings);
+        }
+        let r = parse(&dipole_with("' LD 0 1 11 11 100 0 0")).expect("parses");
+        assert_eq!(loads(&r), 0);
+        assert!(r.warnings.is_empty());
+    }
+
+    /// The indent warning quotes at most `QUOTE_CHARS` characters of the line.
+    #[test]
+    fn the_indent_warning_quote_is_bounded() {
+        let long = format!(" LD 0 1 11 11 100 0 0 {}", "x".repeat(10_000));
+        let r = parse(&dipole_with(&long)).expect("parses");
+        let ParseError::IndentedCard { text, .. } = &r.warnings[0] else {
+            panic!("{:?}", r.warnings);
+        };
+        assert_eq!(text.chars().count(), QUOTE_CHARS + 1, "{text}");
+    }
+
     #[test]
     fn a_zero_or_negative_gw_radius_is_refused() {
         for (r, says) in [("0", "tapered wire"), ("-0.001", "must be positive")] {
@@ -1978,6 +2225,19 @@ EN
             if let Err(ParseError::UnknownCard { .. }) = parse(&format!("{m}\n")) {
                 panic!("{m} has no named treatment");
             }
+        }
+        // The list the indent warning consults knows every one of them (FND-329).
+        for m in NEC2 {
+            assert!(
+                is_known_card(m),
+                "{m} is not in PARSED_CARDS or OTHER_CARDS"
+            );
+        }
+        for m in PARSED_CARDS {
+            assert!(
+                !OTHER_CARDS.iter().any(|(o, _)| *o == m),
+                "{m} is in PARSED_CARDS and OTHER_CARDS"
+            );
         }
         // And the list holds no card the parser also parses.
         for (m, _) in OTHER_CARDS {

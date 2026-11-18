@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-11-14
+last_updated: 2026-11-18
 ---
 
 # CLI Guide — fnec (v0.26.0)
@@ -1141,7 +1141,7 @@ Quick reference:
 | EN | Full | Terminates parse |
 | XQ, EK, KH, CP, PQ, PL, WG, GD | Warning | Cannot change the solved problem: skipped with one warning saying why (`XQ`: fnec runs once, at the last `FR`) |
 | GF, SP, SM, SC, NX, SY | Refused | Would change the antenna, so the deck is refused naming the card (FND-236); for `SY` use `$NAME` templates with `--vars` |
-| Other | Refused | A card fnec does not know is refused, as nec2c refuses it. A line starting with `'` is a comment; commas separate fields (FND-237). See [card-support-matrix.md](card-support-matrix.md#cards-fnec-does-not-model) |
+| Other | Refused | A card fnec does not know is refused, as nec2c refuses it. A line beginning with `#` or a space is a comment, as nec2c reads it — so an indented card is skipped, with a warning naming it; a tab-led line is refused; a line starting with `'` is a comment (FND-329, see [Line conventions](card-support-matrix.md#line-conventions)); commas separate fields (FND-237). See [card-support-matrix.md](card-support-matrix.md#cards-fnec-does-not-model) |
 
 ### Load (LD) card support
 
