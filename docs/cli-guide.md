@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-11-14
+last_updated: 2026-11-18
 ---
 
 # CLI Guide — fnec (v0.26.0)
@@ -1019,7 +1019,9 @@ scripts/pi-benchmark-compare.sh --gpu-vs-cpu-max-pct 25 candidate.csv
 Prints per-deck per-solver deltas for timing and residual diagnostics.
 The `--max-delta-pct` gate fails if candidate timing regresses beyond the
 threshold. The `--gpu-vs-cpu-max-pct` single-file form compares GPU vs CPU
-rows within one CSV (PH5-CHK-005 G5 gate).
+rows within one CSV (PH5-CHK-005 G5 gate). Exit 2 is a violation; exit 3
+means nothing was compared (an empty CSV, or no `ok` row pair), which is not a
+pass (FND-351).
 
 ### Summarise a benchmark CSV
 

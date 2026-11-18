@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/benchmarks.md
 status: living
-last_updated: 2026-10-08
+last_updated: 2026-11-18
 ---
 
 # Benchmarks
@@ -208,7 +208,9 @@ Passes when GPU median wall time across 3 repetitions ≤ 1.25× CPU median.
 scripts/pi-benchmark-compare.sh --gpu-vs-cpu-max-pct 25 <candidate.csv>
 ```
 
-Fails if any (deck, solver) combination has GPU avg time > 1.25× CPU avg time.
+Fails (exit 2) if any (deck, solver) combination has GPU avg time > 1.25× CPU avg time,
+and exits 3 when it compared nothing: no (deck, solver) has both an `ok` GPU row and
+an `ok` CPU row (FND-351).
 
 ### Implementation notes
 

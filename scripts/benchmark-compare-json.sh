@@ -10,8 +10,10 @@
 #   -h, --help
 #
 # Exit codes:
-#   0  All gates passed
-#   1  One or more gates failed
+#   0  All gates passed, and at least one timing entry was compared
+#   1  One or more gates failed, an input is missing or not a benchmark
+#      document, or nothing was compared (FND-351: a gate that compared nothing
+#      must not say PASSED)
 set -euo pipefail
 export LC_NUMERIC=C   # ensure dot decimal separator in awk/printf across all locales
 
@@ -96,7 +98,32 @@ echo "  max_regression_pct: ${max_pct}"
 echo "  max_gpu_cpu_ratio:  ${max_gpu_cpu_ratio}"
 echo ""
 
+# --- Validate both inputs before comparing (FND-351) ---
+# The loops below read `jq` through a process substitution, whose failure
+# escapes `set -e`: an unreadable candidate ran zero iterations and PASSED.
+# Read each summary here, in the main shell, so a bad input stops the gate.
+read_summary() {
+    local label="$1" file="$2" out
+    if [[ ! -r "${file}" ]]; then
+        echo "error: ${label} file not readable: ${file}" >&2
+        exit 1
+    fi
+    if ! out=$(jq -ce '.summary | if type == "array" then .[] else error("summary is not an array") end' "${file}" 2>&1); then
+        echo "error: ${label} is not a benchmark document with a .summary array: ${file}" >&2
+        echo "  jq: ${out}" >&2
+        exit 1
+    fi
+    if [[ -z "${out}" ]]; then
+        echo "error: ${label} has an empty .summary: ${file}" >&2
+        exit 1
+    fi
+    printf '%s\n' "${out}"
+}
+read_summary baseline "${baseline_file}" > /dev/null
+candidate_entries=$(read_summary candidate "${candidate_file}")
+
 fail=0
+compared=0
 
 # --- Per-(deck, solver, exec_mode) regression check ---
 echo "=== Timing regression check ==="
@@ -134,7 +161,8 @@ while IFS= read -r entry; do
             "${deck}/${solver}/${mode}" "${cand_avg}" "${base_avg}" \
             "${regression_pct}"
     fi
-done < <(jq -c '.summary[]' "${candidate_file}")
+    compared=$((compared + 1))
+done <<< "${candidate_entries}"
 
 # --- GPU vs CPU-single ratio check ---
 echo ""
@@ -163,9 +191,13 @@ while IFS= read -r entry; do
         printf "  OK    %-34s GPU/CPU = %s (limit: %s)\n" \
             "${deck}/${solver}" "${ratio}" "${max_gpu_cpu_ratio}"
     fi
-done < <(jq -c '.summary[] | select(.exec_mode=="gpu")' "${candidate_file}")
+done < <(jq -c 'select(.exec_mode=="gpu")' <<< "${candidate_entries}")
 
 echo ""
+if [[ ${compared} -eq 0 ]]; then
+    echo "Result: NOTHING COMPARED (no candidate entry has a baseline entry)"
+    exit 1
+fi
 if [[ ${fail} -ne 0 ]]; then
     echo "Result: FAILED"
     exit 1
