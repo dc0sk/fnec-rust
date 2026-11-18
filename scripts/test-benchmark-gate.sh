@@ -168,6 +168,57 @@ run_test "GPU/CPU ratio 1.09 passes 1.25 limit" 0 \
 run_test "GPU/CPU ratio 1.09 fails 1.05 limit" 1 \
     --max-regression-pct 50 --max-gpu-cpu-ratio 1.05 "${baseline}" "${candidate_ok}"
 
+# --- FND-351: a gate that compared nothing must not pass ---
+printf 'not json\n' > "${tmpdir}/not-json.json"
+printf '{"summary":[]}\n' > "${tmpdir}/empty-summary.json"
+printf '{"runs":[]}\n' > "${tmpdir}/no-summary.json"
+jq '.summary |= map(.deck = "other-deck")' "${baseline}" > "${tmpdir}/unmatched.json"
+
+run_test "candidate that is not JSON is refused" 1 \
+    "${baseline}" "${tmpdir}/not-json.json"
+run_test "missing candidate file is refused" 1 \
+    "${baseline}" "${tmpdir}/does-not-exist.json"
+run_test "candidate with an empty summary is refused" 1 \
+    "${baseline}" "${tmpdir}/empty-summary.json"
+run_test "candidate with no summary is refused" 1 \
+    "${baseline}" "${tmpdir}/no-summary.json"
+run_test "baseline that is not JSON is refused" 1 \
+    "${tmpdir}/not-json.json" "${baseline}"
+run_test "candidate sharing no entry with the baseline is refused" 1 \
+    "${baseline}" "${tmpdir}/unmatched.json"
+
+# --- pi-benchmark-compare.sh (CSV): the same rule, exit 3 ---
+pi="scripts/pi-benchmark-compare.sh"
+hdr="timestamp_utc,target,deck,solver,run,status,elapsed_ms,diag_mode,pulse_rhs,freq_mhz,abs_res,rel_res,exec_mode,diag_spread,sin_rel_res"
+row() { # deck exec status ms
+    printf 't,host,%s,hallen,1,%s,%s,dense,1,14,1e-9,1e-9,%s,0,0\n' "$1" "$3" "$4" "$2"
+}
+{ echo "${hdr}"; } > "${tmpdir}/empty.csv"
+{ echo "${hdr}"; row d gpu error 10; row d cpu-single ok 10; } > "${tmpdir}/gpu-all-error.csv"
+{ echo "${hdr}"; row d gpu ok 11; row d cpu-single ok 10; } > "${tmpdir}/gpu-ok.csv"
+{ echo "${hdr}"; row d gpu ok 20; row d cpu-single ok 10; } > "${tmpdir}/gpu-slow.csv"
+
+pi_test() { # desc expected-exit args...
+    local desc="$1" want="$2" got=0
+    shift 2
+    bash "${pi}" "$@" > "${tmpdir}/out.txt" 2>&1 || got=$?
+    if [[ "${got}" -eq "${want}" ]]; then
+        echo "OK    ${desc}: exit ${got}"
+        ((passed++)) || true
+    else
+        echo "FAIL  ${desc}: expected exit ${want}, got ${got}"
+        cat "${tmpdir}/out.txt"
+        ((failed++)) || true
+    fi
+}
+pi_test "G5: GPU 10% slower passes 25%" 0 --gpu-vs-cpu-max-pct 25 "${tmpdir}/gpu-ok.csv"
+pi_test "G5: GPU 100% slower fails 25%" 2 --gpu-vs-cpu-max-pct 25 "${tmpdir}/gpu-slow.csv"
+pi_test "G5: empty CSV compares nothing" 3 --gpu-vs-cpu-max-pct 25 "${tmpdir}/empty.csv"
+pi_test "G5: all-error GPU rows compare nothing" 3 --gpu-vs-cpu-max-pct 25 "${tmpdir}/gpu-all-error.csv"
+pi_test "two-file: same CSV passes" 0 --max-delta-pct 15 --fail-on-mode-drift "${tmpdir}/gpu-ok.csv" "${tmpdir}/gpu-ok.csv"
+pi_test "two-file: +100% fails 15%" 2 --max-delta-pct 15 "${tmpdir}/gpu-ok.csv" "${tmpdir}/gpu-slow.csv"
+pi_test "two-file: two empty CSVs compare nothing" 3 --max-delta-pct 15 --fail-on-mode-drift "${tmpdir}/empty.csv" "${tmpdir}/empty.csv"
+
 echo ""
 echo "Results: ${passed} passed, ${failed} failed"
 

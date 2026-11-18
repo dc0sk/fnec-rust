@@ -17,6 +17,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The benchmark comparison scripts no longer pass when they compared
+  nothing** (FND-351). `scripts/benchmark-compare-json.sh` printed "Result:
+  PASSED" for a candidate that was not JSON, a missing file or an empty
+  summary, because its loops read `jq` through a process substitution whose
+  failure `set -e` never sees; the dashboard's "Compare against CI baseline"
+  step then reported `gate=passed`. It now refuses each of those, and a
+  candidate that shares no entry with the baseline, with exit 1.
+  `scripts/pi-benchmark-compare.sh` exits 3 when no row pair was compared (an
+  empty CSV, or GPU rows that all failed), in its G5 and two-file modes.
+  `scripts/test-benchmark-gate.sh` covers every case and now runs in
+  `scripts/check-all.sh` as well as in CI.
 - **`--ground-solver sommerfeld` declines a mesh coarser than its height instead
   of returning a reactance up to 500× wrong** (FND-325). Its reaction sum samples
   the reflected kernel once per segment pair, and where a segment is longer than

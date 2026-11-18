@@ -174,6 +174,8 @@ run "unreleased-empty self-test" python3 scripts/test-check-changelog-unreleased
 run "mint-resolve self-test" python3 scripts/test-mint-resolve.py
 run "mint-ci-verdict self-test" python3 scripts/test-mint-ci-verdict.py
 run "physical-constants self-test" python3 scripts/test-check-physical-constants.py
+# Ran only in benchmark-dashboard.yml, where nobody read it fail open (FND-351).
+run "benchmark-gate self-test" bash scripts/test-benchmark-gate.sh
 run "findings-ledger self-test" python3 scripts/test-check-findings-ledger.py
 run "scratch-paths self-test" python3 scripts/test-check-scratch-paths.py
 

@@ -32,6 +32,9 @@ Notes:
     - Rows with status != ok are ignored.
     - Ratio columns are candidate/base (two-file) or gpu/cpu (single-file).
     - If a base value is zero, percentage/ratio fields are reported as n/a.
+    - Exit 2 on a threshold, G5 or mode-drift violation; exit 3 when nothing
+      was compared (no GPU row with a CPU row, or no key with an ok row in both
+      files): a gate that compared nothing does not pass (FND-351).
     - A residual field the route did not compute is "n/a" (FND-306); only numeric
       samples are averaged, and a key with none reports n/a, never 0.
 
@@ -150,6 +153,7 @@ if [[ -n "${gpu_vs_cpu_max_pct}" ]]; then
                 continue
             }
             gpu_avg = gpu_t[k] / gpu_c[k]
+            if (cpu_avg > 0) compared++
             r = (cpu_avg > 0) ? gpu_avg / cpu_avg : 0
             split(k, p, "|")
             printf "%s,%s,%d,%d,%.3f,%.3f,%.4f\n", p[1], p[2], cpu_runs, gpu_c[k], cpu_avg, gpu_avg, r
@@ -162,6 +166,10 @@ if [[ -n "${gpu_vs_cpu_max_pct}" ]]; then
             }
         }
         if (fail) exit 2
+        if (compared == 0) {
+            print "error: nothing compared: no (deck, solver) has both an ok GPU row and an ok CPU row with a positive average" > "/dev/stderr"
+            exit 3
+        }
     }
     ' "${cand_csv}" | {
         echo "deck,solver,cpu_runs,gpu_runs,cpu_avg_ms,gpu_avg_ms,ratio"
@@ -247,6 +255,7 @@ else
             bsin = mean(b_s, b_sn, k); csin = mean(c_s, c_sn, k)
             bm = (br>0)?b_m[k]:"missing"; cm = (cr>0)?c_m[k]:"missing"
 
+            if (br > 0 && cr > 0) compared++
             if (br > 0 && cr > 0 && ba > 0) {
                 delta_pct_num = ((ca - ba) / ba) * 100.0
                 if (max_delta_pct != "" && delta_pct_num > (max_delta_pct + 0.0)) {
@@ -264,6 +273,10 @@ else
         }
         if (fail) {
             exit 2
+        }
+        if (compared == 0) {
+            print "error: nothing compared: no (deck, solver, exec) has an ok row in both files" > "/dev/stderr"
+            exit 3
         }
     }
     ' "$base_csv" "$cand_csv" | {
