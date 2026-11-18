@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/findings-ledger.md
 status: living
-last_updated: 2026-11-15
+last_updated: 2026-11-18
 ---
 
 # Findings ledger

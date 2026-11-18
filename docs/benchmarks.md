@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/benchmarks.md
 status: living
-last_updated: 2026-10-08
+last_updated: 2026-11-18
 ---
 
 # Benchmarks

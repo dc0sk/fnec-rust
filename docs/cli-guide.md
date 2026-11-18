@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-11-14
+last_updated: 2026-11-18
 ---
 
 # CLI Guide — fnec (v0.26.0)
