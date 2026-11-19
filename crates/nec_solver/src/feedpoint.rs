@@ -139,8 +139,8 @@ impl std::fmt::Display for FeedpointError {
             Self::NoCurrent { tag, seg } => write!(
                 f,
                 "no current flows at the feedpoint (tag {tag}, segment {seg}), so it has \
-                 no impedance: Z = V/I is undefined at I = 0. Common causes are a \
-                 zero-amplitude source and a frequency so small the solve underflows"
+                 no impedance: Z = V/I is undefined at I = 0. A common cause is a \
+                 frequency so small the solve underflows"
             ),
             Self::NonFiniteCurrent { tag, seg } => write!(
                 f,

@@ -189,7 +189,9 @@ impl ExcitationKind {
 ///
 /// - **Voltage / current source** (types 0, 4, 5): `tag`/`segment` locate the
 ///   driven segment, and `voltage_real`/`voltage_imag` carry the complex source
-///   value (volts, or amperes for the current source).
+///   value (volts, or amperes for the current source). A voltage source (0, 5)
+///   written with F1 = F2 = 0 or blank is parsed as 1 + j0 V, NEC-2's default
+///   drive; a current source written so is refused (FND-328).
 /// - **Incident plane wave** (types 1, 2, 3): the same positional fields carry
 ///   the NEC2 plane-wave parameters instead — `tag` = NTHETA, `segment` = NPHI,
 ///   `voltage_real` = θ (deg, incidence), `voltage_imag` = φ (deg), and

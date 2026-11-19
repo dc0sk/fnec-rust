@@ -17,6 +17,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **An `EX` voltage source written with no voltage is driven at 1 V, as NEC-2
+  drives it** (FND-328, #672). nec2c replaces a type-0 or type-5 voltage below
+  1e-20 — `EX 0 1 11 0`, blank fields read as zero — with 1 + j0 V; fnec kept
+  the 0. A lone such source exited 1 with a diagnosis blaming "a zero-amplitude
+  source and a frequency so small the solve underflows"; one beside a driven
+  source solved silently at 0 V, a parasitic element nec2c does not have. Two
+  parallel dipoles, `EX 0 1 11 0 1 0` / `EX 0 2 11 0 0 0`, now give both rows
+  V = 1, 154.62 + j46.507 Ω (nec2c 154.74 + j49.819), and the lone source
+  78.955 + j43.484 Ω (nec2c 79.034 + j45.856), with a warning naming the line
+  (`write the voltage to silence this`). The 1 V reaches the solve, the SOURCES
+  table, NEC-2D's INPUT PARAMETERS and the GUI editor alike; the card echo keeps
+  the card as written, as nec2c's does. fnec's own `EX 4` current source at 0 A,
+  which NEC-2 has no default for, is refused by name before a solve.
 - **A deck line beginning with `#` or a space is a comment, as nec2c reads it;
   an indented card is no longer applied** (FND-329, #671). nec2c's `load_line`
   discards a line whose first character is `#` or a space; fnec trimmed every

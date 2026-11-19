@@ -95,6 +95,10 @@ pub enum ParseError {
     /// A line beginning with a tab: nec2c reads its mnemonic as the tab and the
     /// next character, which names no card, and refuses the deck. Fatal (FND-329).
     TabLedLine { line: usize },
+    /// An `EX` voltage source (type 0 or 5) whose F1 and F2 are zero or blank:
+    /// NEC-2 drives it at 1 + j0 V (nec2c `main.c:561-563`, `586-588`, any
+    /// |V| < 1e-20), and so does fnec. A warning (FND-328).
+    DefaultVoltage { line: usize, excitation_type: u32 },
     /// A card did not have enough fields.
     TooFewFields {
         line: usize,
@@ -167,6 +171,15 @@ impl std::fmt::Display for ParseError {
                 f,
                 "line {line}: ` {text}` begins with a space, so NEC-2 reads it as a comment \
                  and fnec skips it too, as no {mnemonic} card; remove the indent to make it a card"
+            ),
+            ParseError::DefaultVoltage {
+                line,
+                excitation_type,
+            } => write!(
+                f,
+                "line {line}: EX {excitation_type} names no voltage (F1 = F2 = 0); NEC-2 \
+                 drives such a source at 1 + j0 V and fnec does too; write the voltage to \
+                 silence this"
             ),
             ParseError::TabLedLine { line } => write!(
                 f,
@@ -943,13 +956,48 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                         });
                     }
                 }
+                // NEC-2's default drive (FND-328): a voltage source whose F1/F2
+                // are zero or blank (`readmn` reads a missing field as 0) is
+                // 1 + j0 V, at nec2c's threshold. Set here, at the card, so the
+                // solve, SOURCES, nec2d's INPUT PARAMETERS and the GUI editor all
+                // read the one value; `program_cards` keeps the card as written.
+                let excitation_type = p.count(1)?;
+                let (mut v_re, mut v_im) = (p.float(1), p.float(2));
+                if v_re.hypot(v_im) < 1e-20 {
+                    match excitation_type {
+                        0 | 5 => {
+                            (v_re, v_im) = (1.0, 0.0);
+                            warnings.push(ParseError::DefaultVoltage {
+                                line: lineno,
+                                excitation_type,
+                            });
+                        }
+                        // fnec's EX 4 is its own current source (nec2c's is a
+                        // Hertzian point source): no default to copy, and 0 A
+                        // drives nothing.
+                        4 => {
+                            return Err(ParseError::UnsupportedValue {
+                                line: lineno,
+                                card: "EX".to_string(),
+                                field: 5,
+                                raw: p.raw(5).to_string(),
+                                reason: "EX 4 names no current (F1 = F2 = 0); a current \
+                                         source of 0 A drives nothing, and NEC-2's 1 V \
+                                         default is for voltage sources only: write the \
+                                         current in F1/F2"
+                                    .to_string(),
+                            });
+                        }
+                        _ => {}
+                    }
+                }
                 deck.cards.push(Card::Ex(ExCard {
-                    excitation_type: p.count(1)?,
+                    excitation_type,
                     tag: p.count(2)?,
                     segment: p.count(3)?,
                     i4,
-                    voltage_real: p.float(1),
-                    voltage_imag: p.float(2),
+                    voltage_real: v_re,
+                    voltage_imag: v_im,
                     polarization_deg: p.float(3),
                     polarization_ratio: p.float(6),
                     theta_inc: p.float(4),
@@ -2917,5 +2965,92 @@ EN
             "EX: {:?}",
             deck.program_cards[1]
         );
+    }
+
+    /// FND-328: the EX card on the dipole, parsed.
+    fn ex_of(ex: &str) -> Result<(ExCard, Vec<ParseError>), ParseError> {
+        let r = parse(&format!(
+            "GW 1 21 0 0 -5 0 0 5 0.001\nGE 0\nFR 0 1 0 0 14 0\n{ex}\nEN\n"
+        ))?;
+        let ex = r
+            .deck
+            .cards
+            .iter()
+            .find_map(|c| match c {
+                Card::Ex(e) => Some(e.clone()),
+                _ => None,
+            })
+            .expect("an EX card");
+        Ok((ex, r.warnings))
+    }
+
+    /// nec2c `main.c:561-563`/`586-588`: an EX 0 or EX 5 whose |F1 + jF2| is
+    /// below 1e-20, blank fields included, is driven at 1 + j0 V, with a warning.
+    #[test]
+    fn a_voltage_source_with_no_voltage_is_one_volt() {
+        for ex in [
+            "EX 0 1 11 0",
+            "EX 0 1 11 0 0 0",
+            "EX 5 1 11 0",
+            "EX 5 1 11 0 0 0",
+            "EX 0 1 11 0 1e-21 0",
+            "EX 0 1 11 0 0 -1e-21",
+        ] {
+            let (e, w) = ex_of(ex).unwrap_or_else(|e| panic!("{ex}: {e}"));
+            assert_eq!((e.voltage_real, e.voltage_imag), (1.0, 0.0), "{ex}");
+            let [ParseError::DefaultVoltage { line: 4, .. }] = w.as_slice() else {
+                panic!("{ex}: {w:?}");
+            };
+            assert!(w[0].to_string().contains("1 + j0 V"), "{}", w[0]);
+        }
+    }
+
+    /// Negative controls: a voltage at or above the threshold, an imaginary one,
+    /// and a plane wave whose F1/F2 are angles are read as written, silently.
+    #[test]
+    fn a_written_voltage_or_a_plane_wave_angle_is_kept() {
+        for (ex, v) in [
+            ("EX 0 1 11 0 1e-19 0", (1e-19, 0.0)),
+            ("EX 0 1 11 0 0 1", (0.0, 1.0)),
+            ("EX 5 1 11 0 0.5 0", (0.5, 0.0)),
+            ("EX 1 1 1 0 0 0", (0.0, 0.0)),
+        ] {
+            let (e, w) = ex_of(ex).unwrap_or_else(|e| panic!("{ex}: {e}"));
+            assert_eq!((e.voltage_real, e.voltage_imag), v, "{ex}");
+            assert!(w.is_empty(), "{ex}: {w:?}");
+        }
+    }
+
+    /// fnec's EX 4 current source has no NEC-2 default: 0 A is refused by name,
+    /// not blamed on the frequency after a solve.
+    #[test]
+    fn a_current_source_with_no_current_is_refused() {
+        for ex in ["EX 4 1 11 0", "EX 4 1 11 0 0 0"] {
+            let e = ex_of(ex).expect_err(ex);
+            assert!(
+                matches!(e, ParseError::UnsupportedValue { field: 5, .. }),
+                "{e:?}"
+            );
+            let msg = e.to_string();
+            assert!(msg.contains("EX 4") && msg.contains("current"), "{msg}");
+            assert!(!msg.contains("frequency"), "{msg}");
+        }
+        let (e, _) = ex_of("EX 4 1 11 0 0.01 0").expect("a written current parses");
+        assert_eq!(e.voltage_real, 0.01);
+    }
+
+    /// The PAR-011 echo prints the card as written, as nec2c's does.
+    #[test]
+    fn the_program_card_echo_keeps_the_blank_voltage() {
+        let r = parse("GW 1 21 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 11 0\nFR 0 1 0 0 14 0\nEN\n")
+            .expect("parses");
+        let ex = r
+            .deck
+            .program_cards
+            .iter()
+            .find(|c| c.mnemonic == "EX")
+            .expect("EX echoed");
+        let f = ex.fields.as_ref().expect("fields");
+        assert_eq!(f.1[0], 0.0, "{ex:?}");
     }
 }
