@@ -135,7 +135,9 @@ fn error_card(e: &ParseError) -> Option<&str> {
         | ParseError::BadField { card, .. }
         | ParseError::UnsupportedValue { card, .. }
         | ParseError::TooFewFields { card, .. } => Some(card),
-        ParseError::TaperPairing { .. } | ParseError::TabLedLine { .. } => None,
+        ParseError::TaperPairing { .. }
+        | ParseError::TabLedLine { .. }
+        | ParseError::DefaultVoltage { .. } => None,
     }
 }
 

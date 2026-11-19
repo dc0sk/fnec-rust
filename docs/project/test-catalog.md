@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-catalog.md
 status: living
-last_updated: 2026-11-18
+last_updated: 2026-11-19
 ---
 
 # Test catalog
@@ -69,6 +69,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/ld_loads.rs` | 6 | `LD` types 1/2/4 change impedance; an unsupported type and a negative one (`LD -1`, FND-292) are refused by name | PRT-002, PH2-CHK-003 |
 | `apps/nec-cli/tests/ld_loads_per_basis.rs` | 2 | `LD` on sinusoidal/pulse/continuity: feed load shifts Z by exactly Z_L on every basis and pulse-RHS mode; off-feed sinusoidal load vs nec2c (FND-124) | PRT-002 |
 | `apps/nec-cli/tests/line_comments_nec2c.rs` | 8 | FND-329 — a deck line's first byte decides whether it is a card, as nec2c 1.3.1's `load_line`: an indented `LD` loads nothing and an indented `GW` builds no wire (each within (2, 8) Ω of nec2c and far from the unfixed reading, with the indent warning naming the line); `#LD` and a `#` note between two loads or between a tapered `GW` and its `GC` are silent comments; a tab-led line is refused naming the tab, the line and both remedies, in either section; the NEC-2D COMMENTS block skips a `#` line and a space-led `CM` as nec2c's does; controls: the same cards at column 1 are cards | FND-329 |
+| `apps/nec-cli/tests/ex_default_voltage_nec2c.rs` | 5 | FND-328 — an `EX` 0 or 5 written with no voltage (blank, `0 0`, or below nec2c's 1e-20) is driven at 1 + j0 V with a warning naming the line, as nec2c 1.3.1 `main.c:561-563`/`586-588`: the lone dipole within (2, 8) Ω and 3 % of nec2c's 1 V deck in FEEDPOINTS, SOURCES, CURRENTS and NEC-2D INPUT POWER, the card echo as written; EX 5 within 10 %; a blank second source beside a driven one, both rows V = 1 within band of nec2c; the 1e-19 V negative control driven as written; fnec's 0 A `EX 4` refused by name, not blamed on the frequency | FND-328 |
 | `apps/nec-cli/tests/loaded_case_tracking.rs` | 2 | Loaded non-collinear topology solves; `--allow-noncollinear` no-op | DEC-010 |
 | `apps/nec-cli/tests/loads_config_validation.rs` | 3 | FND-204/207: a `--loads-config` load naming no segment, and a malformed loads file (unknown key or table, missing or non-integer index, no loads), are refused by name; explicit 0 = all and a single-segment load still apply. | FND-204, FND-207 |
 | `apps/nec-cli/tests/match_contract.rs` | 13 | `fnec match` — the L-network matching helper (GAP-012 / BL-IMPR-017): the component values that present a target at a feedpoint, typed (`--z`) or solved from a deck, as text and as `fnec-match/1` JSON; every solution's input impedance recomputed from the printed components; the deck route is the main command (its JSON impedance, its `LD 9` refusal, its negative-resistance deck), and a solution written into the monopole deck as `LD 0` + `NT` solves to the target; a two-source deck is matched at its first feedpoint with a note counting the record's `feedpoints` (FND-291) | FR-012, GAP-012, FND-291 |
@@ -182,7 +183,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=1002 --> **1002** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=1007 --> **1007** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -197,17 +198,17 @@ functions across the `tests/` binaries listed above.
 | `nec_worker` | 112 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker, pipe (incl. FND-326's answer pairing: banner, stale id, frequency, `"unknown"`, the stray cap, the reader's bounded queue, strays not extending the deadline) |
 | `nec-gui` | 103 | the FND-302 caveat firing through the single solve and the sweep stream, app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 60 | main (incl. FND-326's frequency tripwire), match_cmd (impedance spellings, text and JSON blocks), exec_profile, kernel (the PAR-011 kernel path, CRLF and warnings, its failure), sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
-| `nec_parser` | 60 | lib (incl. the FND-236 card treatments, FND-237 comma fields, the FND-329 line conventions, the PAR-011 program-card records, and the positional reading of FR/RP/GN/TL/NT/PT with its refusals, FND-283/284/285/287/298/300), template |
+| `nec_parser` | 64 | lib (incl. the FND-236 card treatments, FND-237 comma fields, the FND-329 line conventions, the FND-328 default voltage, the PAR-011 program-card records, and the positional reading of FR/RP/GN/TL/NT/PT with its refusals, FND-283/284/285/287/298/300), template |
 | `nec_accel` | 42 | kernel_reference 20, lib 4, `wgpu_device` RUST_LOG filter 3 (FND-190), GPU wait 7 (timeout FND-196, lost-device panic FND-321), failure backoff 3 (FND-234), `gpu_test` re-run policy 4 (FND-215) |
 | `nec_report` | 33 | lib 25, sweep 5 (`SWEEP_POINTS` and `INPUT_IMPEDANCE`, FND-309), fortran 3 (NEC-2 FORMAT lines lifted from the kernel fixtures, records, edge cases) |
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 8 | lib 7, constants 1 (μ0 ε0 c² = 1, FND-297 b) |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=770 --> **770** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=774 --> **774** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1779 --> **1779** = 770 unit + 1002 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1788 --> **1788** = 774 unit + 1007 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
