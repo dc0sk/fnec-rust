@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-catalog.md
 status: living
-last_updated: 2026-11-18
+last_updated: 2026-11-19
 ---
 
 # Test catalog

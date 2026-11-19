@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/card-support-matrix.md
 status: living
-last_updated: 2026-11-18
+last_updated: 2026-11-19
 ---
 
 # NEC Card Support Matrix
